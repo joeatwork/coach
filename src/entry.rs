@@ -1,4 +1,7 @@
 use std::fmt;
+use time::format_description::FormatItem;
+use time::macros::format_description;
+use time::OffsetDateTime;
 
 #[derive(Debug, PartialEq)]
 pub enum Task<'a> {
@@ -19,10 +22,28 @@ impl<'a> fmt::Display for Task<'a> {
     }
 }
 
+#[derive(Debug, PartialEq)]
+pub struct Event<'a> {
+    pub when: OffsetDateTime,
+    pub text: &'a str,
+}
+
+const TIMESTAMP_FORMAT: &[FormatItem<'static>] = format_description!(
+    "[year]-[month repr:numerical]-[day] [weekday repr:short] [hour repr:24]:[minute]"
+);
+
+impl<'a> fmt::Display for Event<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let stamp = self.when.format(&TIMESTAMP_FORMAT).unwrap();
+        write!(f, "<{}> {}", stamp, self.text)
+    }
+}
+
 pub struct Entry<'a> {
     pub label: &'a str,
     pub observations: Vec<(&'a str, &'a str)>,
     pub tasks: Vec<Task<'a>>,
+    pub events: Vec<Event<'a>>,
     pub notes: Vec<&'a str>,
 }
 
@@ -32,6 +53,7 @@ impl Entry<'_> {
             label: "",
             observations: vec![],
             tasks: vec![],
+            events: vec![],
             notes: vec![],
         }
     }
@@ -49,6 +71,13 @@ impl<'a> fmt::Display for Entry<'a> {
             writeln!(f, "{}", t)?;
         }
         if !self.tasks.is_empty() {
+            writeln!(f)?;
+        }
+
+        for e in self.events.iter() {
+            writeln!(f, "* {}", e)?;
+        }
+        if !self.events.is_empty() {
             writeln!(f)?;
         }
 
@@ -224,6 +253,7 @@ fn consume_note(remaining: &str) -> ConsumeResult<'_, &str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use time::macros::datetime;
 
     #[test]
     fn test_empty_entry_to_string() {
@@ -231,6 +261,7 @@ mod tests {
             label: "Test",
             observations: vec![],
             tasks: vec![],
+            events: vec![],
             notes: vec![],
         };
 
@@ -243,6 +274,7 @@ mod tests {
             label: "Test",
             observations: vec![("key", "value1"), ("key", "value2")],
             tasks: vec![],
+            events: vec![],
             notes: vec![],
         };
 
@@ -260,6 +292,7 @@ mod tests {
                 Task::Done("pet the dog"),
                 Task::Cancelled("teach the dog rust"),
             ],
+            events: vec![],
             notes: vec![],
         };
 
@@ -277,11 +310,42 @@ CANCELLED teach the dog rust
     }
 
     #[test]
+    fn test_entry_events_to_string() {
+        let e = Entry {
+            label: "Test",
+            observations: vec![],
+            tasks: vec![],
+            events: vec![
+                Event {
+                    when: datetime!(2021-10-31 21:00 UTC),
+                    text: "working in the lab late one night",
+                },
+                Event {
+                    when: datetime!(2021-10-31 22:10 UTC),
+                    text: "my eyes beheld an eerie sight",
+                },
+            ],
+            notes: vec![],
+        };
+
+        assert_eq!(
+            "Test
+
+* <2021-10-31 Sun 21:00> working in the lab late one night
+* <2021-10-31 Sun 22:10> my eyes beheld an eerie sight
+
+",
+            e.to_string()
+        )
+    }
+
+    #[test]
     fn test_entry_notes_to_string() {
         let e = Entry {
             label: "Test",
             observations: vec![],
             tasks: vec![],
+            events: vec![],
             notes: vec![
                 "dogs can't type",
                 "It's a good thing\nthe dog learned graffiti\nfrom her palm pilot",
