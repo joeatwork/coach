@@ -20,12 +20,12 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let sample = entry::Entry {
         label: &dt_label,
-        observations: &[("example", "this is an example entry")],
-        tasks: &[
+        observations: vec![("example", "this is an example entry")],
+        tasks: vec![
             entry::Task::Done("Write an example entry"),
             entry::Task::Todo("Read an entry from a file"),
         ],
-        notes: &["Notes go here, after observations and tasks"],
+        notes: vec!["Notes go here, after observations and tasks"],
     };
 
     today.write_all(b"coach1\n")?;
