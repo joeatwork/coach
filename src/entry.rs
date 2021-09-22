@@ -66,13 +66,20 @@ impl<'a> fmt::Display for Entry<'a> {
 pub enum ParseError {
     EmptyLabel,
     MissingNewline,
+    ExpectedObservation,
+}
+
+enum ConsumeResult<'a, T> {
+    NotFound,
+    Found { remaining: &'a str, found: T },
+    Problem(ParseError),
 }
 
 pub fn parse<'a>(text: &'a str, dest: &mut Entry<'a>) -> Result<(), ParseError> {
     let mut remaining = text;
 
-    match remaining.find("\n") {
-        Some(0) => return Err(ParseError::EmptyLabel), // TODO better error for empty label
+    match remaining.find('\n') {
+        Some(0) => return Err(ParseError::EmptyLabel),
         Some(ix) => {
             dest.label = &remaining[..ix];
             remaining = &remaining[ix + 1..];
@@ -81,80 +88,114 @@ pub fn parse<'a>(text: &'a str, dest: &mut Entry<'a>) -> Result<(), ParseError> 
     }
 
     loop {
-        if remaining.is_empty() {
-            return Ok(());
+        match consume_observation(remaining) {
+            ConsumeResult::Found {
+                remaining: r,
+                found,
+            } => {
+                dest.observations.push(found);
+                remaining = r;
+            }
+            ConsumeResult::NotFound => break,
+            ConsumeResult::Problem(err) => return Err(err),
         }
-
-        let obs_end = match remaining.find('\n') {
-            Some(ix) => ix,
-            None => return Err(ParseError::MissingNewline),
-        };
-        if obs_end == 0 {
-            break;
-        }
-
-        let obs_line = &remaining[..obs_end];
-        remaining = &remaining[obs_end + 1..];
-        // TODO Parse obs_line
     }
 
-    let mut tasks: Vec<Task<'a>> = Vec::new();
-    let mut notes: Vec<&'a str> = Vec::new();
     while !remaining.is_empty() {
         remaining = remaining.trim_start_matches('\n');
 
-        if let Some((r, t)) = consume_task(remaining) {
-            remaining = r;
-            tasks.push(t);
-            continue;
+        match consume_task(remaining) {
+            ConsumeResult::Found {
+                remaining: r,
+                found,
+            } => {
+                remaining = r;
+                dest.tasks.push(found);
+                continue;
+            }
+            ConsumeResult::Problem(err) => return Err(err),
+            ConsumeResult::NotFound => (),
         }
 
-        if let Some((r, n)) = consume_note(remaining) {
-            remaining = r;
-            notes.push(n);
+        // If consume_note returns NotFound for anything
+        // other than a blank line, the parser will break.
+        match consume_note(remaining) {
+            ConsumeResult::Found {
+                remaining: r,
+                found,
+            } => {
+                remaining = r;
+                dest.notes.push(found);
+            }
+            ConsumeResult::Problem(err) => return Err(err),
+            ConsumeResult::NotFound => (),
         }
     }
-
-    dest.tasks.append(&mut tasks);
-    dest.notes.append(&mut notes);
 
     Ok(())
 }
 
+fn consume_observation(remaining: &str) -> ConsumeResult<'_, (&str, &str)> {
+    if remaining.is_empty() {
+        return ConsumeResult::NotFound;
+    }
+
+    if remaining.starts_with('\n') {
+        return ConsumeResult::NotFound;
+    }
+
+    let obs_end = match remaining.find('\n') {
+        Some(ix) => ix,
+        None => return ConsumeResult::Problem(ParseError::MissingNewline),
+    };
+
+    let obs_line = &remaining[0..obs_end];
+    match obs_line.find(": ") {
+        Some(ix) => ConsumeResult::Found {
+            remaining: &remaining[obs_end + 1..],
+            found: (&obs_line[..ix], &obs_line[ix + 2..]),
+        },
+        None => ConsumeResult::Problem(ParseError::ExpectedObservation),
+    }
+}
+
 // TODO Something kinda gross here - I'd like to return (Task || None || Err)
 // which seems like it needs it's own enum...
-fn consume_task(remaining: &str) -> Option<(&str, Task<'_>)> {
+fn consume_task(remaining: &str) -> ConsumeResult<'_, Task<'_>> {
     let task_end = match remaining.find('\n') {
         Some(ix) => ix,
-        None => return None, // TODO should be ParseError::MissingNewline?
+        None => return ConsumeResult::Problem(ParseError::MissingNewline),
     };
 
     if task_end == 0 {
-        return None;
+        return ConsumeResult::NotFound;
     }
 
-    let task = match remaining {
+    let found = match remaining {
         x if x.starts_with("TODO ") => Task::Todo(&x[5..task_end]),
         x if x.starts_with("WORKING ") => Task::Working(&x[8..task_end]),
         x if x.starts_with("DONE ") => Task::Done(&x[5..task_end]),
         x if x.starts_with("CANCELLED ") => Task::Cancelled(&x[10..task_end]),
-        _ => return None,
+        _ => return ConsumeResult::NotFound,
     };
 
-    Some((&remaining[task_end + 1..], task))
+    ConsumeResult::Found {
+        remaining: &remaining[task_end + 1..],
+        found,
+    }
 }
 
 // A note begins with a non-blank line and is terminated either by a blank line or end-of-string.
-fn consume_note(remaining: &str) -> Option<(&str, &str)> {
+fn consume_note(remaining: &str) -> ConsumeResult<'_, &str> {
     let mut note_end: usize = 0;
     let mut remain_begin: usize = 0;
 
     if remaining.is_empty() {
-        return None;
+        return ConsumeResult::NotFound;
     }
 
     if remaining.starts_with('\n') {
-        return None;
+        return ConsumeResult::NotFound;
     }
 
     for (ix, _) in remaining.match_indices('\n') {
@@ -171,10 +212,13 @@ fn consume_note(remaining: &str) -> Option<(&str, &str)> {
     }
 
     if note_end == 0 {
-        return None;
+        return ConsumeResult::NotFound;
     }
 
-    Some((&remaining[remain_begin..], &remaining[..note_end]))
+    ConsumeResult::Found {
+        remaining: &remaining[remain_begin..],
+        found: &remaining[..note_end],
+    }
 }
 
 #[cfg(test)]
@@ -304,5 +348,11 @@ it is multiline
             vec!["This is note one", "And this is note two,\nit is multiline"],
             e.notes
         );
+    }
+
+    #[test]
+    fn test_parse_missing_parts() {
+        // TODO can we just do a table-driven test of parses?
+        // Include extra newlines and nonsense too.
     }
 }
