@@ -31,14 +31,8 @@ fuzz_target!(|original: coach::entry::Entry<'_>| {
         )
     }
 
-    /* TODO I suspect I don't know what "!=" means here for dates?
-    if original.events != parsed.events {
-        panic!(
-            "round trip failed for events:\n<{}>\n|{:?}|\n<{}>\n|{:?}|\n",
-            original, original, parsed, parsed
-        )
-    }
-    *************/
+    /* TODO I suspect I don't know what "!=" means here for dates, so
+    we're not comparing events yet. */
 
     if original.notes != parsed.notes {
         panic!(
