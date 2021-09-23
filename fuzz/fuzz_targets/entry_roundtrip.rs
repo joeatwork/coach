@@ -8,9 +8,42 @@ fuzz_target!(|original: coach::entry::Entry<'_>| {
     }
 
     let original_s = original.to_string();
-    let mut parsed = coach::entry::Entry::default();
-    if let  = coach::entry::parse(&original_s, &mut parsed).unwrap();
-    if original.ne(&parsed) {
-        panic!("round trip failed:\n{}\n\n{}", original, parsed)
+    let parsed = coach::entry::parse(&original_s).unwrap();
+
+    if original.label != parsed.label {
+        panic!(
+            "round trip failed for label:\n<{}>\n|{:?}|\n<{}>\n|{:?}|\n",
+            original, original, parsed, parsed
+        )
+    }
+
+    if original.observations != parsed.observations {
+        panic!(
+            "round trip failed for observations:\n<{}>\n|{:?}|\n<{}>\n|{:?}|\n",
+            original, original, parsed, parsed
+        )
+    }
+
+    if original.tasks != parsed.tasks {
+        panic!(
+            "round trip failed for tasks:\n<{}>\n|{:?}|\n<{}>\n|{:?}|\n",
+            original, original, parsed, parsed
+        )
+    }
+
+    /* TODO I suspect I don't know what "!=" means here for dates?
+    if original.events != parsed.events {
+        panic!(
+            "round trip failed for events:\n<{}>\n|{:?}|\n<{}>\n|{:?}|\n",
+            original, original, parsed, parsed
+        )
+    }
+    *************/
+
+    if original.notes != parsed.notes {
+        panic!(
+            "round trip failed for notes:\n<{}>\n|{:?}|\n<{}>\n|{:?}|\n",
+            original, original, parsed, parsed
+        )
     }
 });

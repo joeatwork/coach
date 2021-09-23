@@ -88,7 +88,7 @@ impl<'a> Arbitrary<'a> for Event<'a> {
     }
 }
 
-#[derive(Arbitrary, Debug, PartialEq)]
+#[derive(Arbitrary, Debug)]
 pub struct Entry<'a> {
     pub label: &'a str,
     pub observations: Vec<(NoNewlines<'a>, NoNewlines<'a>)>,
@@ -97,12 +97,10 @@ pub struct Entry<'a> {
     pub notes: Vec<&'a str>,
 }
 
-// TODO change `new` to be an implementation of Default, per
-// https://rust-lang.github.io/rust-clippy/master/index.html#new_without_default
-impl Default for Entry<'_> {
-    fn default() -> Self {
+impl<'a> Entry<'a> {
+    fn new(label: &'a str) -> Self {
         Entry {
-            label: "",
+            label,
             observations: vec![],
             tasks: vec![],
             events: vec![],
@@ -157,13 +155,14 @@ enum ConsumeResult<'a, T> {
     Problem(ParseError),
 }
 
-pub fn parse<'a>(text: &'a str, dest: &mut Entry<'a>) -> Result<(), ParseError> {
+pub fn parse<'a>(text: &'a str) -> Result<Entry<'a>, ParseError> {
     let mut remaining = text;
+    let mut dest: Entry;
 
     match remaining.find('\n') {
         Some(0) => return Err(ParseError::EmptyLabel),
         Some(ix) => {
-            dest.label = &remaining[..ix];
+            dest = Entry::new(&remaining[..ix]);
             remaining = &remaining[ix + 1..];
         }
         None => return Err(ParseError::MissingNewline),
@@ -227,7 +226,7 @@ pub fn parse<'a>(text: &'a str, dest: &mut Entry<'a>) -> Result<(), ParseError> 
         };
     }
 
-    Ok(())
+    Ok(dest)
 }
 
 // TODO observation keys aren't just NoNewlines, they also can't contain ':' characters.
@@ -260,7 +259,7 @@ fn consume_observation(remaining: &str) -> ConsumeResult<'_, (NoNewlines, NoNewl
 fn consume_task(remaining: &str) -> ConsumeResult<'_, Task<'_>> {
     let task_end = match remaining.find('\n') {
         Some(ix) => ix,
-        None => return ConsumeResult::Problem(ParseError::MissingNewline),
+        None => return ConsumeResult::NotFound,
     };
 
     if task_end == 0 {
@@ -284,7 +283,7 @@ fn consume_task(remaining: &str) -> ConsumeResult<'_, Task<'_>> {
 fn consume_event(remaining: &str) -> ConsumeResult<'_, Event> {
     let line_end = match remaining.find('\n') {
         Some(ix) => ix,
-        None => return ConsumeResult::Problem(ParseError::MissingNewline),
+        None => return ConsumeResult::NotFound,
     };
 
     if line_end == 0 {
@@ -498,15 +497,13 @@ it is multiline
 
     #[test]
     fn test_parse_label() {
-        let mut e = Entry::new();
-        let _ = parse(MESSAGE, &mut e);
+        let e = parse(MESSAGE).unwrap();
         assert_eq!("Test", e.label);
     }
 
     #[test]
     fn test_parse_tasks() {
-        let mut e = Entry::new();
-        let _ = parse(MESSAGE, &mut e);
+        let e = parse(MESSAGE).unwrap();
         assert_eq!(
             vec![
                 Task::Todo(NoNewlines("take a break")),
@@ -520,8 +517,7 @@ it is multiline
 
     #[test]
     fn test_parse_events() {
-        let mut e = Entry::new();
-        let _ = parse(MESSAGE, &mut e);
+        let e = parse(MESSAGE).unwrap();
         assert_eq!(
             vec![
                 Event {
@@ -539,8 +535,7 @@ it is multiline
 
     #[test]
     fn test_parse_notes() {
-        let mut e = Entry::default();
-        let _ = parse(MESSAGE, &mut e);
+        let e = parse(MESSAGE).unwrap();
         assert_eq!(
             vec!["This is note one", "And this is note two,\nit is multiline"],
             e.notes
@@ -549,18 +544,14 @@ it is multiline
 
     #[test]
     fn test_parse_just_label() {
-        let mut e = Entry::default();
-        let _ = parse("Label\n\n", &mut e);
-
-        let mut expect = Entry::default();
-        expect.label = "Label";
+        let e = parse("Label\n\n").unwrap();
+        let expect = Entry::new("Label");
         assert_eq!(expect, e);
     }
 
     #[test]
     fn test_display_pure_label() {
-        let mut e = Entry::default();
-        e.label = "Label";
+        let e = Entry::new("Label");
         assert_eq!("Label\n\n", e.to_string());
     }
 
@@ -573,9 +564,8 @@ it is multiline
             events: vec![],
             notes: vec![],
         };
-        let mut dest = Entry::default();
         let stringed = source.to_string();
-        let _ = parse(&stringed, &mut dest);
+        let dest = parse(&stringed).unwrap();
         assert_eq!(source, dest);
     }
 }
