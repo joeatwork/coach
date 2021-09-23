@@ -1,10 +1,10 @@
 
 [package]
-name = "coach-fuzz"
-version = "0.0.0"
 authors = ["Automatically generated"]
-publish = false
 edition = "2018"
+name = "coach-fuzz"
+publish = false
+version = "0.0.0"
 
 [package.metadata]
 cargo-fuzz = true
@@ -20,7 +20,13 @@ path = ".."
 members = ["."]
 
 [[bin]]
-name = "fuzz_target_1"
-path = "fuzz_targets/fuzz_target_1.rs"
-test = false
 doc = false
+name = "parser"
+path = "fuzz_targets/parser.rs"
+test = false
+
+[[bin]]
+doc = false
+name = "entry_roundtrip"
+path = "fuzz_targets/entry_roundtrip.rs"
+test = false
