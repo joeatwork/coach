@@ -1,9 +1,10 @@
+use arbitrary::{Arbitrary, Unstructured};
 use std::fmt;
 use time::format_description::FormatItem;
 use time::macros::format_description;
 use time::OffsetDateTime;
 
-#[derive(Debug, PartialEq)]
+#[derive(Arbitrary, Debug, PartialEq)]
 pub enum Task<'a> {
     Todo(&'a str),
     Working(&'a str),
@@ -39,6 +40,16 @@ impl<'a> fmt::Display for Event<'a> {
     }
 }
 
+impl<'a> Arbitrary<'a> for Event<'a> {
+    fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
+        let text = u.arbitrary::<&'a str>()?;
+        let when_stamp = u.int_in_range::<i64>(0..=2147483640)?;
+        let when = OffsetDateTime::from_unix_timestamp(when_stamp).unwrap(); // when_stamp is not out of range
+        Ok(Event { text, when })
+    }
+}
+
+#[derive(Arbitrary, Debug)]
 pub struct Entry<'a> {
     pub label: &'a str,
     pub observations: Vec<(&'a str, &'a str)>,
@@ -412,11 +423,5 @@ it is multiline
             vec!["This is note one", "And this is note two,\nit is multiline"],
             e.notes
         );
-    }
-
-    #[test]
-    fn test_parse_missing_parts() {
-        // TODO can we just do a table-driven test of parses?
-        // Include extra newlines and nonsense too.
     }
 }
