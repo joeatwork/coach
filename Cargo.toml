@@ -8,4 +8,4 @@ version = "0.1.0"
 
 [dependencies]
 arbitrary = {version = "1.0.2", features = ["derive"]}
-time = {version = "0.3.2", features = ["formatting", "macros"]}
+time = {version = "0.3.2", features = ["formatting", "macros", "parsing"]}

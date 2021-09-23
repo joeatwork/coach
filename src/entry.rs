@@ -2,14 +2,53 @@ use arbitrary::{Arbitrary, Unstructured};
 use std::fmt;
 use time::format_description::FormatItem;
 use time::macros::format_description;
-use time::OffsetDateTime;
+use time::{OffsetDateTime, PrimitiveDateTime, UtcOffset};
+
+// TODO NoNewlines is pretty half-assed, and "sonuds"
+// much safer than it actually is. It might be fun to make
+// a function like
+//
+// before_first_newline(&'a str) -> NoNewlines<'a>
+//
+// and then make that the only way
+// to get a NoNewlines (or maybe just panic! if constructed with
+// a newline?)
+#[derive(Debug, PartialEq)]
+pub struct NoNewlines<'a>(&'a str);
+
+/// # Safety
+///
+/// promise_no_newlines does not check that the given string
+/// has no newlines, it is up to the caller to be sure the
+/// argument is newline-free.
+pub unsafe fn promise_no_newlines(s: &str) -> NoNewlines {
+    NoNewlines(s)
+}
+
+impl<'a> fmt::Display for NoNewlines<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let NoNewlines(s) = self;
+        write!(f, "{}", s)
+    }
+}
+
+impl<'a> Arbitrary<'a> for NoNewlines<'a> {
+    fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<NoNewlines<'a>> {
+        let raw = u.arbitrary::<&'a str>()?;
+        let clean = match raw.find('\n') {
+            Some(ix) => &raw[..ix],
+            None => raw,
+        };
+        Ok(NoNewlines(clean))
+    }
+}
 
 #[derive(Arbitrary, Debug, PartialEq)]
 pub enum Task<'a> {
-    Todo(&'a str),
-    Working(&'a str),
-    Done(&'a str),
-    Cancelled(&'a str),
+    Todo(NoNewlines<'a>),
+    Working(NoNewlines<'a>),
+    Done(NoNewlines<'a>),
+    Cancelled(NoNewlines<'a>),
 }
 
 impl<'a> fmt::Display for Task<'a> {
@@ -26,7 +65,7 @@ impl<'a> fmt::Display for Task<'a> {
 #[derive(Debug, PartialEq)]
 pub struct Event<'a> {
     pub when: OffsetDateTime,
-    pub text: &'a str,
+    pub text: NoNewlines<'a>,
 }
 
 const TIMESTAMP_FORMAT: &[FormatItem<'static>] = format_description!(
@@ -42,24 +81,26 @@ impl<'a> fmt::Display for Event<'a> {
 
 impl<'a> Arbitrary<'a> for Event<'a> {
     fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
-        let text = u.arbitrary::<&'a str>()?;
+        let text = u.arbitrary::<NoNewlines<'a>>()?;
         let when_stamp = u.int_in_range::<i64>(0..=2147483640)?;
         let when = OffsetDateTime::from_unix_timestamp(when_stamp).unwrap(); // when_stamp is not out of range
         Ok(Event { text, when })
     }
 }
 
-#[derive(Arbitrary, Debug)]
+#[derive(Arbitrary, Debug, PartialEq)]
 pub struct Entry<'a> {
     pub label: &'a str,
-    pub observations: Vec<(&'a str, &'a str)>,
+    pub observations: Vec<(NoNewlines<'a>, NoNewlines<'a>)>,
     pub tasks: Vec<Task<'a>>,
     pub events: Vec<Event<'a>>,
     pub notes: Vec<&'a str>,
 }
 
-impl Entry<'_> {
-    pub fn new() -> Self {
+// TODO change `new` to be an implementation of Default, per
+// https://rust-lang.github.io/rust-clippy/master/index.html#new_without_default
+impl Default for Entry<'_> {
+    fn default() -> Self {
         Entry {
             label: "",
             observations: vec![],
@@ -101,12 +142,13 @@ impl<'a> fmt::Display for Entry<'a> {
     }
 }
 
-// TODO: impl Error for ParseError
 #[derive(Debug, PartialEq)]
 pub enum ParseError {
     EmptyLabel,
     MissingNewline,
     ExpectedObservation,
+    MissingTimestamp,
+    MalformedTimestamp,
 }
 
 enum ConsumeResult<'a, T> {
@@ -125,7 +167,7 @@ pub fn parse<'a>(text: &'a str, dest: &mut Entry<'a>) -> Result<(), ParseError> 
             remaining = &remaining[ix + 1..];
         }
         None => return Err(ParseError::MissingNewline),
-    }
+    };
 
     loop {
         match consume_observation(remaining) {
@@ -144,6 +186,19 @@ pub fn parse<'a>(text: &'a str, dest: &mut Entry<'a>) -> Result<(), ParseError> 
     while !remaining.is_empty() {
         remaining = remaining.trim_start_matches('\n');
 
+        match consume_event(remaining) {
+            ConsumeResult::Found {
+                remaining: r,
+                found,
+            } => {
+                remaining = r;
+                dest.events.push(found);
+                continue;
+            }
+            ConsumeResult::Problem(err) => return Err(err),
+            ConsumeResult::NotFound => (),
+        };
+
         match consume_task(remaining) {
             ConsumeResult::Found {
                 remaining: r,
@@ -155,7 +210,7 @@ pub fn parse<'a>(text: &'a str, dest: &mut Entry<'a>) -> Result<(), ParseError> 
             }
             ConsumeResult::Problem(err) => return Err(err),
             ConsumeResult::NotFound => (),
-        }
+        };
 
         // If consume_note returns NotFound for anything
         // other than a blank line, the parser will break.
@@ -169,13 +224,14 @@ pub fn parse<'a>(text: &'a str, dest: &mut Entry<'a>) -> Result<(), ParseError> 
             }
             ConsumeResult::Problem(err) => return Err(err),
             ConsumeResult::NotFound => (),
-        }
+        };
     }
 
     Ok(())
 }
 
-fn consume_observation(remaining: &str) -> ConsumeResult<'_, (&str, &str)> {
+// TODO observation keys aren't just NoNewlines, they also can't contain ':' characters.
+fn consume_observation(remaining: &str) -> ConsumeResult<'_, (NoNewlines, NoNewlines)> {
     if remaining.is_empty() {
         return ConsumeResult::NotFound;
     }
@@ -193,7 +249,7 @@ fn consume_observation(remaining: &str) -> ConsumeResult<'_, (&str, &str)> {
     match obs_line.find(": ") {
         Some(ix) => ConsumeResult::Found {
             remaining: &remaining[obs_end + 1..],
-            found: (&obs_line[..ix], &obs_line[ix + 2..]),
+            found: (NoNewlines(&obs_line[..ix]), NoNewlines(&obs_line[ix + 2..])),
         },
         None => ConsumeResult::Problem(ParseError::ExpectedObservation),
     }
@@ -212,16 +268,57 @@ fn consume_task(remaining: &str) -> ConsumeResult<'_, Task<'_>> {
     }
 
     let found = match remaining {
-        x if x.starts_with("TODO ") => Task::Todo(&x[5..task_end]),
-        x if x.starts_with("WORKING ") => Task::Working(&x[8..task_end]),
-        x if x.starts_with("DONE ") => Task::Done(&x[5..task_end]),
-        x if x.starts_with("CANCELLED ") => Task::Cancelled(&x[10..task_end]),
+        x if x.starts_with("TODO ") => Task::Todo(NoNewlines(&x[5..task_end])),
+        x if x.starts_with("WORKING ") => Task::Working(NoNewlines(&x[8..task_end])),
+        x if x.starts_with("DONE ") => Task::Done(NoNewlines(&x[5..task_end])),
+        x if x.starts_with("CANCELLED ") => Task::Cancelled(NoNewlines(&x[10..task_end])),
         _ => return ConsumeResult::NotFound,
     };
 
     ConsumeResult::Found {
         remaining: &remaining[task_end + 1..],
         found,
+    }
+}
+
+fn consume_event(remaining: &str) -> ConsumeResult<'_, Event> {
+    let line_end = match remaining.find('\n') {
+        Some(ix) => ix,
+        None => return ConsumeResult::Problem(ParseError::MissingNewline),
+    };
+
+    if line_end == 0 {
+        return ConsumeResult::NotFound;
+    }
+
+    if !remaining.starts_with("* ") {
+        return ConsumeResult::NotFound;
+    }
+
+    let eventline = &remaining[2..line_end];
+
+    if !eventline.starts_with('<') {
+        // TODO in the future, maybe make timestamps optional?
+        // TODO if they aren't optional, why do we need the leading asterisk?
+        return ConsumeResult::Problem(ParseError::MissingTimestamp);
+    }
+
+    let (when_text, body_text) = match eventline.find('>') {
+        Some(ix) => (&eventline[1..ix], &eventline[ix + 1..]),
+        None => return ConsumeResult::Problem(ParseError::MalformedTimestamp),
+    };
+
+    let dt = match PrimitiveDateTime::parse(when_text.trim(), &TIMESTAMP_FORMAT) {
+        Ok(d) => d.assume_offset(UtcOffset::UTC),
+        Err(_) => return ConsumeResult::Problem(ParseError::MalformedTimestamp),
+    };
+
+    ConsumeResult::Found {
+        found: Event {
+            text: NoNewlines(body_text.trim_start()),
+            when: dt,
+        },
+        remaining: &remaining[line_end + 1..],
     }
 }
 
@@ -283,7 +380,10 @@ mod tests {
     fn test_entry_observations_to_string() {
         let e = Entry {
             label: "Test",
-            observations: vec![("key", "value1"), ("key", "value2")],
+            observations: vec![
+                (NoNewlines("key"), NoNewlines("value1")),
+                (NoNewlines("key"), NoNewlines("value2")),
+            ],
             tasks: vec![],
             events: vec![],
             notes: vec![],
@@ -298,10 +398,10 @@ mod tests {
             label: "Test",
             observations: vec![],
             tasks: vec![
-                super::Task::Todo("take a break"),
-                Task::Working("learn rust"),
-                Task::Done("pet the dog"),
-                Task::Cancelled("teach the dog rust"),
+                super::Task::Todo(NoNewlines("take a break")),
+                Task::Working(NoNewlines("learn rust")),
+                Task::Done(NoNewlines("pet the dog")),
+                Task::Cancelled(NoNewlines("teach the dog rust")),
             ],
             events: vec![],
             notes: vec![],
@@ -329,11 +429,11 @@ CANCELLED teach the dog rust
             events: vec![
                 Event {
                     when: datetime!(2021-10-31 21:00 UTC),
-                    text: "working in the lab late one night",
+                    text: NoNewlines("working in the lab late one night"),
                 },
                 Event {
                     when: datetime!(2021-10-31 22:10 UTC),
-                    text: "my eyes beheld an eerie sight",
+                    text: NoNewlines("my eyes beheld an eerie sight"),
                 },
             ],
             notes: vec![],
@@ -386,6 +486,9 @@ WORKING learn rust
 DONE pet the dog
 CANCELLED teach the dog rust
 
+* <2021-10-31 Sun 21:10> working in the lab late one night
+* <2021-10-31 Sun 22:10> my eyes beheld an eerie sight
+
 This is note one
 
 And this is note two,
@@ -406,22 +509,73 @@ it is multiline
         let _ = parse(MESSAGE, &mut e);
         assert_eq!(
             vec![
-                Task::Todo("take a break"),
-                Task::Working("learn rust"),
-                Task::Done("pet the dog"),
-                Task::Cancelled("teach the dog rust"),
+                Task::Todo(NoNewlines("take a break")),
+                Task::Working(NoNewlines("learn rust")),
+                Task::Done(NoNewlines("pet the dog")),
+                Task::Cancelled(NoNewlines("teach the dog rust")),
             ],
             e.tasks
         );
     }
 
     #[test]
-    fn test_parse_notes() {
+    fn test_parse_events() {
         let mut e = Entry::new();
+        let _ = parse(MESSAGE, &mut e);
+        assert_eq!(
+            vec![
+                Event {
+                    when: datetime!(2021-10-31 21:10:00 UTC),
+                    text: NoNewlines("working in the lab late one night"),
+                },
+                Event {
+                    when: datetime!(2021-10-31 22:10:00 UTC),
+                    text: NoNewlines("my eyes beheld an eerie sight"),
+                },
+            ],
+            e.events
+        )
+    }
+
+    #[test]
+    fn test_parse_notes() {
+        let mut e = Entry::default();
         let _ = parse(MESSAGE, &mut e);
         assert_eq!(
             vec!["This is note one", "And this is note two,\nit is multiline"],
             e.notes
         );
+    }
+
+    #[test]
+    fn test_parse_just_label() {
+        let mut e = Entry::default();
+        let _ = parse("Label\n\n", &mut e);
+
+        let mut expect = Entry::default();
+        expect.label = "Label";
+        assert_eq!(expect, e);
+    }
+
+    #[test]
+    fn test_display_pure_label() {
+        let mut e = Entry::default();
+        e.label = "Label";
+        assert_eq!("Label\n\n", e.to_string());
+    }
+
+    #[test]
+    fn test_roundtrips() {
+        let source = Entry {
+            label: "Label",
+            observations: vec![],
+            tasks: vec![Task::Working(NoNewlines("Task"))],
+            events: vec![],
+            notes: vec![],
+        };
+        let mut dest = Entry::default();
+        let stringed = source.to_string();
+        let _ = parse(&stringed, &mut dest);
+        assert_eq!(source, dest);
     }
 }
