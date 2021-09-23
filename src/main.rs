@@ -23,11 +23,9 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let sample = entry::Entry {
         label: &dt_label,
-        observations: vec![unsafe {
-            (
-                entry::promise_no_newlines("example"),
-                entry::promise_no_newlines("this is an example entry"),
-            )
+        observations: vec![entry::Observation {
+            name: unsafe { entry::promise_no_newlines("example") },
+            value: unsafe { entry::promise_no_newlines("this is an example entry") },
         }],
         tasks: vec![
             entry::Task::Done(unsafe { entry::promise_no_newlines("Write an example entry") }),

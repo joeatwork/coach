@@ -43,6 +43,35 @@ impl<'a> Arbitrary<'a> for NoNewlines<'a> {
     }
 }
 
+#[derive(Debug, PartialEq)]
+pub struct Observation<'a> {
+    pub name: NoNewlines<'a>,
+    pub value: NoNewlines<'a>,
+}
+
+impl<'a> Arbitrary<'a> for Observation<'a> {
+    fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Observation<'a>> {
+        let NoNewlines(raw_name) = u.arbitrary::<NoNewlines<'a>>()?;
+        let value = u.arbitrary::<NoNewlines<'a>>()?;
+
+        let name_text = match raw_name.find(':') {
+            Some(ix) => &raw_name[..ix],
+            None => raw_name,
+        };
+
+        Ok(Observation {
+            name: NoNewlines(name_text),
+            value,
+        })
+    }
+}
+
+impl<'a> fmt::Display for Observation<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}: {}", &self.name, &self.value)
+    }
+}
+
 #[derive(Arbitrary, Debug, PartialEq)]
 pub enum Task<'a> {
     Todo(NoNewlines<'a>),
@@ -88,10 +117,10 @@ impl<'a> Arbitrary<'a> for Event<'a> {
     }
 }
 
-#[derive(Arbitrary, Debug)]
+#[derive(Arbitrary, Debug, PartialEq)]
 pub struct Entry<'a> {
     pub label: &'a str,
-    pub observations: Vec<(NoNewlines<'a>, NoNewlines<'a>)>,
+    pub observations: Vec<Observation<'a>>,
     pub tasks: Vec<Task<'a>>,
     pub events: Vec<Event<'a>>,
     pub notes: Vec<&'a str>,
@@ -113,7 +142,7 @@ impl<'a> fmt::Display for Entry<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "{}", self.label)?;
         for ob in self.observations.iter() {
-            writeln!(f, "{}: {}", ob.0, ob.1)?;
+            writeln!(f, "{}", ob)?;
         }
         writeln!(f)?;
 
@@ -230,7 +259,7 @@ pub fn parse<'a>(text: &'a str) -> Result<Entry<'a>, ParseError> {
 }
 
 // TODO observation keys aren't just NoNewlines, they also can't contain ':' characters.
-fn consume_observation(remaining: &str) -> ConsumeResult<'_, (NoNewlines, NoNewlines)> {
+fn consume_observation(remaining: &str) -> ConsumeResult<'_, Observation> {
     if remaining.is_empty() {
         return ConsumeResult::NotFound;
     }
@@ -248,7 +277,10 @@ fn consume_observation(remaining: &str) -> ConsumeResult<'_, (NoNewlines, NoNewl
     match obs_line.find(": ") {
         Some(ix) => ConsumeResult::Found {
             remaining: &remaining[obs_end + 1..],
-            found: (NoNewlines(&obs_line[..ix]), NoNewlines(&obs_line[ix + 2..])),
+            found: Observation {
+                name: NoNewlines(&obs_line[..ix]),
+                value: NoNewlines(&obs_line[ix + 2..]),
+            },
         },
         None => ConsumeResult::Problem(ParseError::ExpectedObservation),
     }
@@ -380,8 +412,14 @@ mod tests {
         let e = Entry {
             label: "Test",
             observations: vec![
-                (NoNewlines("key"), NoNewlines("value1")),
-                (NoNewlines("key"), NoNewlines("value2")),
+                Observation {
+                    name: NoNewlines("key"),
+                    value: NoNewlines("value1"),
+                },
+                Observation {
+                    name: NoNewlines("key"),
+                    value: NoNewlines("value2"),
+                },
             ],
             tasks: vec![],
             events: vec![],
