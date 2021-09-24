@@ -3,7 +3,7 @@ use libfuzzer_sys::fuzz_target;
 extern crate coach;
 
 fuzz_target!(|original: coach::entry::Entry<'_>| {
-    if original.label.is_empty() {
+    if original.label.to_string().is_empty() {
         return; // Known uninteresting case
     }
 

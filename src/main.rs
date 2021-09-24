@@ -22,20 +22,22 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut today = File::create(&dt_label)?;
 
     let sample = entry::Entry {
-        label: &dt_label,
+        label: entry::promise_no_newlines(&dt_label),
         observations: vec![entry::Observation {
-            name: unsafe { entry::promise_no_newlines("example") },
-            value: unsafe { entry::promise_no_newlines("this is an example entry") },
+            name: entry::promise_no_newlines("example"),
+            value: entry::promise_no_newlines("this is an example entry"),
         }],
         tasks: vec![
-            entry::Task::Done(unsafe { entry::promise_no_newlines("Write an example entry") }),
-            entry::Task::Todo(unsafe { entry::promise_no_newlines("Read an entry from a file") }),
+            entry::Task::Done(entry::promise_no_newlines("Write an example entry")),
+            entry::Task::Todo(entry::promise_no_newlines("Read an entry from a file")),
         ],
         events: vec![entry::Event {
             when: dt,
-            text: unsafe { entry::promise_no_newlines("created a cool new file") },
+            text: entry::promise_no_newlines("created a cool new file"),
         }],
-        notes: vec!["Notes go here, after observations and tasks"],
+        notes: vec![entry::promise_nonempty_note(
+            "Notes go here, after observations and tasks",
+        )],
     };
 
     today.write_all(b"coach1\n")?;

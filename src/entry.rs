@@ -4,24 +4,15 @@ use time::format_description::FormatItem;
 use time::macros::format_description;
 use time::{OffsetDateTime, PrimitiveDateTime, UtcOffset};
 
-// TODO NoNewlines is pretty half-assed, and "sonuds"
-// much safer than it actually is. It might be fun to make
-// a function like
-//
-// before_first_newline(&'a str) -> NoNewlines<'a>
-//
-// and then make that the only way
-// to get a NoNewlines (or maybe just panic! if constructed with
-// a newline?)
+// You should only construct a NoNewlines if you know for a fact
+// that the contained string has no newlines.
 #[derive(Debug, PartialEq)]
 pub struct NoNewlines<'a>(&'a str);
 
-/// # Safety
-///
-/// promise_no_newlines does not check that the given string
-/// has no newlines, it is up to the caller to be sure the
-/// argument is newline-free.
-pub unsafe fn promise_no_newlines(s: &str) -> NoNewlines {
+pub fn promise_no_newlines(s: &str) -> NoNewlines {
+    if s.contains('\n') {
+        panic!("promise_no_newlines can't be called with {}", s);
+    }
     NoNewlines(s)
 }
 
@@ -117,17 +108,44 @@ impl<'a> Arbitrary<'a> for Event<'a> {
     }
 }
 
-#[derive(Arbitrary, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
+pub struct Note<'a>(&'a str);
+
+pub fn promise_nonempty_note(s: &str) -> Note {
+    if s.is_empty() {
+        panic!("promise_nonempty_note called with an empty string");
+    }
+
+    Note(s)
+}
+
+impl<'a> fmt::Display for Note<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl<'a> Arbitrary<'a> for Note<'a> {
+    fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
+        let mut s = u.arbitrary::<&'a str>()?;
+        while s.is_empty() {
+            s = u.arbitrary::<&'a str>()?;
+        }
+        Ok(Note(s))
+    }
+}
+
+#[derive(Debug, PartialEq)]
 pub struct Entry<'a> {
-    pub label: &'a str,
+    pub label: NoNewlines<'a>,
     pub observations: Vec<Observation<'a>>,
     pub tasks: Vec<Task<'a>>,
     pub events: Vec<Event<'a>>,
-    pub notes: Vec<&'a str>,
+    pub notes: Vec<Note<'a>>,
 }
 
 impl<'a> Entry<'a> {
-    fn new(label: &'a str) -> Self {
+    fn new(label: NoNewlines<'a>) -> Self {
         Entry {
             label,
             observations: vec![],
@@ -191,7 +209,7 @@ pub fn parse<'a>(text: &'a str) -> Result<Entry<'a>, ParseError> {
     match remaining.find('\n') {
         Some(0) => return Err(ParseError::EmptyLabel),
         Some(ix) => {
-            dest = Entry::new(&remaining[..ix]);
+            dest = Entry::new(NoNewlines(&remaining[..ix]));
             remaining = &remaining[ix + 1..];
         }
         None => return Err(ParseError::MissingNewline),
@@ -354,7 +372,7 @@ fn consume_event(remaining: &str) -> ConsumeResult<'_, Event> {
 }
 
 // A note begins with a non-blank line and is terminated either by a blank line or end-of-string.
-fn consume_note(remaining: &str) -> ConsumeResult<'_, &str> {
+fn consume_note(remaining: &str) -> ConsumeResult<'_, Note> {
     let mut note_end: usize = 0;
     let mut remain_begin: usize = 0;
 
@@ -385,7 +403,7 @@ fn consume_note(remaining: &str) -> ConsumeResult<'_, &str> {
 
     ConsumeResult::Found {
         remaining: &remaining[remain_begin..],
-        found: &remaining[..note_end],
+        found: Note(&remaining[..note_end]),
     }
 }
 
@@ -397,7 +415,7 @@ mod tests {
     #[test]
     fn test_empty_entry_to_string() {
         let e = Entry {
-            label: "Test",
+            label: NoNewlines("Test"),
             observations: vec![],
             tasks: vec![],
             events: vec![],
@@ -410,7 +428,7 @@ mod tests {
     #[test]
     fn test_entry_observations_to_string() {
         let e = Entry {
-            label: "Test",
+            label: NoNewlines("Test"),
             observations: vec![
                 Observation {
                     name: NoNewlines("key"),
@@ -432,7 +450,7 @@ mod tests {
     #[test]
     fn test_entry_tasks_to_string() {
         let e = Entry {
-            label: "Test",
+            label: NoNewlines("Test"),
             observations: vec![],
             tasks: vec![
                 super::Task::Todo(NoNewlines("take a break")),
@@ -460,7 +478,7 @@ CANCELLED teach the dog rust
     #[test]
     fn test_entry_events_to_string() {
         let e = Entry {
-            label: "Test",
+            label: NoNewlines("Test"),
             observations: vec![],
             tasks: vec![],
             events: vec![
@@ -490,13 +508,13 @@ CANCELLED teach the dog rust
     #[test]
     fn test_entry_notes_to_string() {
         let e = Entry {
-            label: "Test",
+            label: NoNewlines("Test"),
             observations: vec![],
             tasks: vec![],
             events: vec![],
             notes: vec![
-                "dogs can't type",
-                "It's a good thing\nthe dog learned graffiti\nfrom her palm pilot",
+                Note("dogs can't type"),
+                Note("It's a good thing\nthe dog learned graffiti\nfrom her palm pilot"),
             ],
         };
 
@@ -536,7 +554,7 @@ it is multiline
     #[test]
     fn test_parse_label() {
         let e = parse(MESSAGE).unwrap();
-        assert_eq!("Test", e.label);
+        assert_eq!(NoNewlines("Test"), e.label);
     }
 
     #[test]
@@ -575,7 +593,10 @@ it is multiline
     fn test_parse_notes() {
         let e = parse(MESSAGE).unwrap();
         assert_eq!(
-            vec!["This is note one", "And this is note two,\nit is multiline"],
+            vec![
+                Note("This is note one"),
+                Note("And this is note two,\nit is multiline")
+            ],
             e.notes
         );
     }
@@ -583,20 +604,20 @@ it is multiline
     #[test]
     fn test_parse_just_label() {
         let e = parse("Label\n\n").unwrap();
-        let expect = Entry::new("Label");
+        let expect = Entry::new(NoNewlines("Label"));
         assert_eq!(expect, e);
     }
 
     #[test]
     fn test_display_pure_label() {
-        let e = Entry::new("Label");
+        let e = Entry::new(NoNewlines("Label"));
         assert_eq!("Label\n\n", e.to_string());
     }
 
     #[test]
     fn test_roundtrips() {
         let source = Entry {
-            label: "Label",
+            label: NoNewlines("Test"),
             observations: vec![],
             tasks: vec![Task::Working(NoNewlines("Task"))],
             events: vec![],
