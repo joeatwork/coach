@@ -129,31 +129,44 @@ impl<'a> Arbitrary<'a> for Note<'a> {
     // Lots of invariants here, it'd be nice if they were
     // enforced or marked someplace like NoNewlines is?
     fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
-        let mut s = u.arbitrary::<&'a str>()?;
-        s = match s.find("\n\n") {
-            Some(ix) => &s[..ix],
-            None => s,
+        let src = u.arbitrary::<&'a str>()?;
+
+        let mut s = match src.find("\n\n") {
+            Some(ix) => &src[..ix],
+            None => src,
         };
 
-        loop {
+        while !s.is_empty() {
             s = s.trim_matches('\n');
 
-            if let ConsumeResult::Found {
-                remaining,
-                found: _,
-            } = consume_task(s)
-            {
-                s = remaining;
-                continue;
+            match consume_task(s) {
+                ConsumeResult::Found {
+                    remaining,
+                    found: _,
+                } => {
+                    s = remaining;
+                    continue;
+                }
+                ConsumeResult::Problem(_) => {
+                    s = &s[1..];
+                    continue;
+                }
+                ConsumeResult::NotFound => (),
             }
 
-            if let ConsumeResult::Found {
-                remaining,
-                found: _,
-            } = consume_event(s)
-            {
-                s = remaining;
-                continue;
+            match consume_event(s) {
+                ConsumeResult::Found {
+                    remaining,
+                    found: _,
+                } => {
+                    s = remaining;
+                    continue;
+                }
+                ConsumeResult::Problem(_) => {
+                    s = &s[1..];
+                    continue;
+                }
+                ConsumeResult::NotFound => (),
             }
 
             break;
@@ -162,6 +175,7 @@ impl<'a> Arbitrary<'a> for Note<'a> {
         if s.is_empty() {
             s = "x"
         }
+
         Ok(Note(s))
     }
 }
