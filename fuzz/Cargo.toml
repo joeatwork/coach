@@ -1,0 +1,32 @@
+
+[package]
+authors = ["Automatically generated"]
+edition = "2018"
+name = "coach-fuzz"
+publish = false
+version = "0.0.0"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.coach]
+path = ".."
+
+# Prevent this from interfering with workspaces
+[workspace]
+members = ["."]
+
+[[bin]]
+doc = false
+name = "parser"
+path = "fuzz_targets/parser.rs"
+test = false
+
+[[bin]]
+doc = false
+name = "entry_roundtrip"
+path = "fuzz_targets/entry_roundtrip.rs"
+test = false
