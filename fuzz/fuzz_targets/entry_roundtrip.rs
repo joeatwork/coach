@@ -4,7 +4,7 @@ extern crate coach;
 
 fuzz_target!(|original: coach::entry::Entry<'_>| {
     if original.label.to_string().is_empty() {
-        return; // Known uninteresting case
+        return; // non-interesting case.
     }
 
     let original_s = original.to_string();
@@ -12,22 +12,22 @@ fuzz_target!(|original: coach::entry::Entry<'_>| {
 
     if original.label != parsed.label {
         panic!(
-            "round trip failed for label:\n<{}>\n|{:?}|\n<{}>\n|{:?}|\n",
-            original, original, parsed, parsed
+            "round trip failed for label:\n<{}>\n|{}|\n<{:?}>\n|{:?}|\n",
+            original, parsed, original, parsed
         )
     }
 
     if original.observations != parsed.observations {
         panic!(
-            "round trip failed for observations:\n<{}>\n|{:?}|\n<{}>\n|{:?}|\n",
-            original, original, parsed, parsed
+            "round trip failed for observations:\n<{}>\n|{}|\n<{:?}>\n|{:?}|\n",
+            original, parsed, original, parsed
         )
     }
 
     if original.tasks != parsed.tasks {
         panic!(
-            "round trip failed for tasks:\n<{}>\n|{:?}|\n<{}>\n|{:?}|\n",
-            original, original, parsed, parsed
+            "round trip failed for tasks:\n<{}>\n|{}|\n<{:?}>\n|{:?}|\n",
+            original, parsed, original, parsed
         )
     }
 
@@ -36,8 +36,8 @@ fuzz_target!(|original: coach::entry::Entry<'_>| {
 
     if original.notes != parsed.notes {
         panic!(
-            "round trip failed for notes:\n<{}>\n|{:?}|\n<{}>\n|{:?}|\n",
-            original, original, parsed, parsed
+            "round trip failed for notes:\n<{}>\n|{}|\n<{:?}>\n|{:?}|\n",
+            original, parsed, original, parsed
         )
     }
 });

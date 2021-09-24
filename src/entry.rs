@@ -126,16 +126,47 @@ impl<'a> fmt::Display for Note<'a> {
 }
 
 impl<'a> Arbitrary<'a> for Note<'a> {
+    // Lots of invariants here, it'd be nice if they were
+    // enforced or marked someplace like NoNewlines is?
     fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
         let mut s = u.arbitrary::<&'a str>()?;
-        while s.is_empty() {
-            s = u.arbitrary::<&'a str>()?;
+        s = match s.find("\n\n") {
+            Some(ix) => &s[..ix],
+            None => s,
+        };
+
+        loop {
+            s = s.trim_matches('\n');
+
+            if let ConsumeResult::Found {
+                remaining,
+                found: _,
+            } = consume_task(s)
+            {
+                s = remaining;
+                continue;
+            }
+
+            if let ConsumeResult::Found {
+                remaining,
+                found: _,
+            } = consume_event(s)
+            {
+                s = remaining;
+                continue;
+            }
+
+            break;
+        }
+
+        if s.is_empty() {
+            s = "x"
         }
         Ok(Note(s))
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Arbitrary, Debug, PartialEq)]
 pub struct Entry<'a> {
     pub label: NoNewlines<'a>,
     pub observations: Vec<Observation<'a>>,
@@ -232,19 +263,6 @@ pub fn parse<'a>(text: &'a str) -> Result<Entry<'a>, ParseError> {
     while !remaining.is_empty() {
         remaining = remaining.trim_start_matches('\n');
 
-        match consume_event(remaining) {
-            ConsumeResult::Found {
-                remaining: r,
-                found,
-            } => {
-                remaining = r;
-                dest.events.push(found);
-                continue;
-            }
-            ConsumeResult::Problem(err) => return Err(err),
-            ConsumeResult::NotFound => (),
-        };
-
         match consume_task(remaining) {
             ConsumeResult::Found {
                 remaining: r,
@@ -252,6 +270,19 @@ pub fn parse<'a>(text: &'a str) -> Result<Entry<'a>, ParseError> {
             } => {
                 remaining = r;
                 dest.tasks.push(found);
+                continue;
+            }
+            ConsumeResult::Problem(err) => return Err(err),
+            ConsumeResult::NotFound => (),
+        };
+
+        match consume_event(remaining) {
+            ConsumeResult::Found {
+                remaining: r,
+                found,
+            } => {
+                remaining = r;
+                dest.events.push(found);
                 continue;
             }
             ConsumeResult::Problem(err) => return Err(err),
@@ -304,12 +335,10 @@ fn consume_observation(remaining: &str) -> ConsumeResult<'_, Observation> {
     }
 }
 
-// TODO Something kinda gross here - I'd like to return (Task || None || Err)
-// which seems like it needs it's own enum...
 fn consume_task(remaining: &str) -> ConsumeResult<'_, Task<'_>> {
-    let task_end = match remaining.find('\n') {
-        Some(ix) => ix,
-        None => return ConsumeResult::NotFound,
+    let (task_end, rest) = match remaining.find('\n') {
+        Some(ix) => (ix, &remaining[ix + 1..]),
+        None => (remaining.len(), &remaining[remaining.len()..]),
     };
 
     if task_end == 0 {
@@ -325,15 +354,15 @@ fn consume_task(remaining: &str) -> ConsumeResult<'_, Task<'_>> {
     };
 
     ConsumeResult::Found {
-        remaining: &remaining[task_end + 1..],
+        remaining: rest,
         found,
     }
 }
 
 fn consume_event(remaining: &str) -> ConsumeResult<'_, Event> {
-    let line_end = match remaining.find('\n') {
-        Some(ix) => ix,
-        None => return ConsumeResult::NotFound,
+    let (line_end, rest) = match remaining.find('\n') {
+        Some(ix) => (ix, &remaining[ix + 1..]),
+        None => (remaining.len(), &remaining[remaining.len()..]),
     };
 
     if line_end == 0 {
@@ -367,15 +396,12 @@ fn consume_event(remaining: &str) -> ConsumeResult<'_, Event> {
             text: NoNewlines(body_text.trim_start()),
             when: dt,
         },
-        remaining: &remaining[line_end + 1..],
+        remaining: rest,
     }
 }
 
 // A note begins with a non-blank line and is terminated either by a blank line or end-of-string.
 fn consume_note(remaining: &str) -> ConsumeResult<'_, Note> {
-    let mut note_end: usize = 0;
-    let mut remain_begin: usize = 0;
-
     if remaining.is_empty() {
         return ConsumeResult::NotFound;
     }
@@ -384,26 +410,18 @@ fn consume_note(remaining: &str) -> ConsumeResult<'_, Note> {
         return ConsumeResult::NotFound;
     }
 
-    for (ix, _) in remaining.match_indices('\n') {
-        if ix == note_end + 1 {
-            remain_begin = ix;
-            break;
-        }
-        note_end = ix;
-        remain_begin = note_end;
-    }
+    let (note_text, ret_remain) = match remaining.find("\n\n") {
+        Some(ix) => (&remaining[..ix], &remaining[ix + 1..]),
+        None => (remaining, &remaining[remaining.len()..]),
+    };
 
-    if note_end == 0 {
-        note_end = remaining.len();
-    }
-
-    if note_end == 0 {
+    if note_text.is_empty() {
         return ConsumeResult::NotFound;
     }
 
     ConsumeResult::Found {
-        remaining: &remaining[remain_begin..],
-        found: Note(&remaining[..note_end]),
+        remaining: ret_remain,
+        found: Note(note_text),
     }
 }
 
@@ -612,6 +630,13 @@ it is multiline
     fn test_display_pure_label() {
         let e = Entry::new(NoNewlines("Label"));
         assert_eq!("Label\n\n", e.to_string());
+    }
+
+    #[test]
+    fn test_parse_no_terminator() {
+        // This case Oomed in fuzz testing?
+        let s = "Label\n\nNo terminator";
+        let _ = parse(&s);
     }
 
     #[test]
