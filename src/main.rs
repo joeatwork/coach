@@ -1,3 +1,4 @@
+use clap::{App, Arg, SubCommand};
 use std::error::Error;
 use std::fs::File;
 use std::io::Write;
@@ -6,15 +7,49 @@ use time::format_description::FormatItem;
 use time::macros::format_description;
 use time::OffsetDateTime;
 
-mod entry;
+use coach::entry;
+use coach::files;
 
 const DATE_FORMAT: &[FormatItem<'static>] =
     format_description!("[year]-[month repr:numerical]-[day]");
 
 fn main() -> Result<(), Box<dyn Error>> {
-    // TODO get day from args if not provided
-    // TODO testing daytimes?
-    // TODO handling a pile of files?
+    let mut app = App::new("coach")
+        .about("a journal and project manager")
+        .subcommand(
+            SubCommand::with_name("today")
+                .about("creates a new journal file in the current working directory"),
+        )
+        .subcommand(
+            SubCommand::with_name("observe")
+                .about("adds a key/value observation to the journal")
+                .arg(Arg::with_name("NAME").required(true).index(1))
+                .arg(Arg::with_name("VALUE").required(true).index(2)),
+        )
+        .subcommand(
+            SubCommand::with_name("cat")
+                .about("writes the contents of a journal entry to standard out"),
+        );
+    let matches = app.clone().get_matches();
+
+    let moment = SystemTime::now();
+    let dt: OffsetDateTime = moment.into();
+    let dt_label = dt.format(&DATE_FORMAT)?;
+
+    match matches.subcommand_name() {
+        Some("today") => println!("WOULDA RUN TODAY"),
+        Some("observe") => println!("WOULDA RUN OBSERVE"),
+        Some("cat") => {
+            let e = files::find_or_create_entry(&dt_label);
+            println!("{}", e);
+        }
+        Some(_) | None => {
+            let _ = app.print_long_help();
+            println!();
+            return Ok(());
+        }
+    };
+
     let moment = SystemTime::now();
     let dt: OffsetDateTime = moment.into();
     let dt_label = dt.format(&DATE_FORMAT)?;

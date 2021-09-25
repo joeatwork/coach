@@ -1,4 +1,5 @@
 use arbitrary::{Arbitrary, Unstructured};
+use std::error::Error;
 use std::fmt;
 use time::format_description::FormatItem;
 use time::macros::format_description;
@@ -190,7 +191,7 @@ pub struct Entry<'a> {
 }
 
 impl<'a> Entry<'a> {
-    fn new(label: NoNewlines<'a>) -> Self {
+    pub fn new(label: NoNewlines<'a>) -> Self {
         Entry {
             label,
             observations: vec![],
@@ -241,13 +242,30 @@ pub enum ParseError {
     MalformedTimestamp,
 }
 
+impl fmt::Display for ParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let msg = match self {
+            EmptyLabel => "entries must contain a nonempty first line",
+            MissingNewline => "newlines are required after the label and observations in an entry",
+            ExpectedObservation => {
+                "there must be a blank line between the entry header and any notes"
+            }
+            MissingTimestamp => "an event was found, but it was missing a <timestamp>",
+            MalformedTimestamp => "the timestamp for this event was in an unexpected format",
+        };
+        write!(f, "{}", msg)
+    }
+}
+
+impl Error for ParseError {}
+
 enum ConsumeResult<'a, T> {
     NotFound,
     Found { remaining: &'a str, found: T },
     Problem(ParseError),
 }
 
-pub fn parse<'a>(text: &'a str) -> Result<Entry<'a>, ParseError> {
+pub fn parse(text: &str) -> Result<Entry, ParseError> {
     let mut remaining = text;
     let mut dest: Entry;
 
@@ -321,7 +339,6 @@ pub fn parse<'a>(text: &'a str) -> Result<Entry<'a>, ParseError> {
     Ok(dest)
 }
 
-// TODO observation keys aren't just NoNewlines, they also can't contain ':' characters.
 fn consume_observation(remaining: &str) -> ConsumeResult<'_, Observation> {
     if remaining.is_empty() {
         return ConsumeResult::NotFound;
