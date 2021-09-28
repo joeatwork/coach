@@ -3,5 +3,6 @@ use libfuzzer_sys::fuzz_target;
 extern crate coach;
 
 fuzz_target!(|s: &str| {
-    let _ = coach::entry::parse(s);
+    let mut e = coach::entry::Entry::default();
+    let _ = coach::entry::parse(s, &mut e);
 });

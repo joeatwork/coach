@@ -41,10 +41,16 @@ fn main() -> Result<(), Box<dyn Error>> {
         Some("today") => println!("WOULDA RUN TODAY"),
         Some("observe") => println!("WOULDA RUN OBSERVE"),
         Some("cat") => {
-            let mut e = entry::Entry::default();
+            let mut entry = entry::Entry::default();
             let mut storage: Vec<u8> = Vec::new();
-            let found = files::read_entry_from_file(&mut storage, &mut e, &dt_label.to_string());
-            println!("{:?}", found);
+            match files::read_entry_from_file(&mut storage, &mut entry, &dt_label.to_string()) {
+                Ok(_) => println!("{}", entry.to_string()),
+                Err(e) => {
+                    eprintln!("Error: {}", e);
+                    return Err(Box::new(e));
+                }
+            }
+            return Ok(());
         }
         Some(_) | None => {
             let _ = app.print_long_help();

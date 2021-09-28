@@ -8,7 +8,8 @@ fuzz_target!(|original: coach::entry::Entry<'_>| {
     }
 
     let original_s = original.to_string();
-    let parsed = coach::entry::parse(&original_s).unwrap();
+    let mut parsed = coach::entry::Entry::default();
+    coach::entry::parse(&original_s, &mut parsed).unwrap();
 
     if original.label != parsed.label {
         panic!(

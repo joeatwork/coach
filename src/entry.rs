@@ -242,6 +242,8 @@ pub enum ParseError {
     MalformedTimestamp,
 }
 
+// TODO it'd be nice to have some metadata (input position at least)
+// for these errors
 impl fmt::Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let msg = match self {
@@ -417,12 +419,16 @@ fn consume_event(remaining: &str) -> ConsumeResult<'_, Event> {
 
     let (when_text, body_text) = match eventline.find('>') {
         Some(ix) => (&eventline[1..ix], &eventline[ix + 1..]),
-        None => return ConsumeResult::Problem(ParseError::MalformedTimestamp),
+        None => {
+            return ConsumeResult::Problem(ParseError::MalformedTimestamp);
+        }
     };
 
     let dt = match PrimitiveDateTime::parse(when_text.trim(), &TIMESTAMP_FORMAT) {
         Ok(d) => d.assume_offset(UtcOffset::UTC),
-        Err(_) => return ConsumeResult::Problem(ParseError::MalformedTimestamp),
+        Err(_) => {
+            return ConsumeResult::Problem(ParseError::MalformedTimestamp);
+        }
     };
 
     ConsumeResult::Found {
@@ -660,14 +666,20 @@ it is multiline
     #[test]
     fn test_parse_just_label() {
         let mut e = Entry::default();
-        let _ = parse(MESSAGE, &mut e).unwrap();
-        let expect = Entry::default();
+        let _ = parse("Label\n\n", &mut e).unwrap();
+        let expect = Entry {
+            label: NoNewlines("Label"),
+            ..Entry::default()
+        };
         assert_eq!(expect, e);
     }
 
     #[test]
     fn test_display_pure_label() {
-        let e = Entry::default();
+        let e = Entry {
+            label: NoNewlines("Label"),
+            ..Entry::default()
+        };
         assert_eq!("Label\n\n", e.to_string());
     }
 
@@ -675,7 +687,7 @@ it is multiline
     fn test_parse_no_terminator() {
         let s = "Label\n\nNo terminator";
         let mut e = Entry::default();
-        let _ = parse(s, &mut e);
+        let _ = parse(&s, &mut e);
     }
 
     #[test]
