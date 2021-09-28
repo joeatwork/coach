@@ -34,14 +34,17 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let moment = SystemTime::now();
     let dt: OffsetDateTime = moment.into();
-    let dt_label = dt.format(&DATE_FORMAT)?;
+    let dt_formatted = dt.format(&DATE_FORMAT)?;
+    let dt_label = entry::promise_no_newlines(&dt_formatted);
 
     match matches.subcommand_name() {
         Some("today") => println!("WOULDA RUN TODAY"),
         Some("observe") => println!("WOULDA RUN OBSERVE"),
         Some("cat") => {
-            let e = files::find_or_create_entry(&dt_label);
-            println!("{}", e);
+            let mut e = entry::Entry::default();
+            let mut storage: Vec<u8> = Vec::new();
+            let found = files::read_entry_from_file(&mut storage, &mut e, &dt_label.to_string());
+            println!("{:?}", found);
         }
         Some(_) | None => {
             let _ = app.print_long_help();

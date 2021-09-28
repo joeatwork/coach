@@ -190,10 +190,10 @@ pub struct Entry<'a> {
     pub notes: Vec<Note<'a>>,
 }
 
-impl<'a> Entry<'a> {
-    pub fn new(label: NoNewlines<'a>) -> Self {
+impl<'a> Default for Entry<'a> {
+    fn default() -> Self {
         Entry {
-            label,
+            label: NoNewlines("PLACEHOLDER"),
             observations: vec![],
             tasks: vec![],
             events: vec![],
@@ -245,13 +245,17 @@ pub enum ParseError {
 impl fmt::Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let msg = match self {
-            EmptyLabel => "entries must contain a nonempty first line",
-            MissingNewline => "newlines are required after the label and observations in an entry",
-            ExpectedObservation => {
+            ParseError::EmptyLabel => "entries must contain a nonempty first line",
+            ParseError::MissingNewline => {
+                "newlines are required after the label and observations in an entry"
+            }
+            ParseError::ExpectedObservation => {
                 "there must be a blank line between the entry header and any notes"
             }
-            MissingTimestamp => "an event was found, but it was missing a <timestamp>",
-            MalformedTimestamp => "the timestamp for this event was in an unexpected format",
+            ParseError::MissingTimestamp => "an event was found, but it was missing a <timestamp>",
+            ParseError::MalformedTimestamp => {
+                "the timestamp for this event was in an unexpected format"
+            }
         };
         write!(f, "{}", msg)
     }
@@ -265,14 +269,13 @@ enum ConsumeResult<'a, T> {
     Problem(ParseError),
 }
 
-pub fn parse(text: &str) -> Result<Entry, ParseError> {
+pub fn parse<'a>(text: &'a str, dest: &mut Entry<'a>) -> Result<(), ParseError> {
     let mut remaining = text;
-    let mut dest: Entry;
 
     match remaining.find('\n') {
         Some(0) => return Err(ParseError::EmptyLabel),
         Some(ix) => {
-            dest = Entry::new(NoNewlines(&remaining[..ix]));
+            dest.label = NoNewlines(&remaining[..ix]);
             remaining = &remaining[ix + 1..];
         }
         None => return Err(ParseError::MissingNewline),
@@ -336,7 +339,7 @@ pub fn parse(text: &str) -> Result<Entry, ParseError> {
         };
     }
 
-    Ok(dest)
+    Ok(())
 }
 
 fn consume_observation(remaining: &str) -> ConsumeResult<'_, Observation> {
@@ -602,13 +605,15 @@ it is multiline
 
     #[test]
     fn test_parse_label() {
-        let e = parse(MESSAGE).unwrap();
+        let mut e = Entry::default();
+        let _ = parse(MESSAGE, &mut e).unwrap();
         assert_eq!(NoNewlines("Test"), e.label);
     }
 
     #[test]
     fn test_parse_tasks() {
-        let e = parse(MESSAGE).unwrap();
+        let mut e = Entry::default();
+        let _ = parse(MESSAGE, &mut e).unwrap();
         assert_eq!(
             vec![
                 Task::Todo(NoNewlines("take a break")),
@@ -622,7 +627,8 @@ it is multiline
 
     #[test]
     fn test_parse_events() {
-        let e = parse(MESSAGE).unwrap();
+        let mut e = Entry::default();
+        let _ = parse(MESSAGE, &mut e).unwrap();
         assert_eq!(
             vec![
                 Event {
@@ -640,7 +646,8 @@ it is multiline
 
     #[test]
     fn test_parse_notes() {
-        let e = parse(MESSAGE).unwrap();
+        let mut e = Entry::default();
+        let _ = parse(MESSAGE, &mut e).unwrap();
         assert_eq!(
             vec![
                 Note("This is note one"),
@@ -652,22 +659,23 @@ it is multiline
 
     #[test]
     fn test_parse_just_label() {
-        let e = parse("Label\n\n").unwrap();
-        let expect = Entry::new(NoNewlines("Label"));
+        let mut e = Entry::default();
+        let _ = parse(MESSAGE, &mut e).unwrap();
+        let expect = Entry::default();
         assert_eq!(expect, e);
     }
 
     #[test]
     fn test_display_pure_label() {
-        let e = Entry::new(NoNewlines("Label"));
+        let e = Entry::default();
         assert_eq!("Label\n\n", e.to_string());
     }
 
     #[test]
     fn test_parse_no_terminator() {
-        // This case Oomed in fuzz testing?
         let s = "Label\n\nNo terminator";
-        let _ = parse(&s);
+        let mut e = Entry::default();
+        let _ = parse(s, &mut e);
     }
 
     #[test]
@@ -680,7 +688,8 @@ it is multiline
             notes: vec![],
         };
         let stringed = source.to_string();
-        let dest = parse(&stringed).unwrap();
+        let mut dest = Entry::default();
+        let _ = parse(&stringed, &mut dest);
         assert_eq!(source, dest);
     }
 }
