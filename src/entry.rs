@@ -204,6 +204,7 @@ impl<'a> Default for Entry<'a> {
 
 impl<'a> fmt::Display for Entry<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "coach1")?;
         writeln!(f, "{}", self.label)?;
         for ob in self.observations.iter() {
             writeln!(f, "{}", ob)?;
@@ -235,6 +236,7 @@ impl<'a> fmt::Display for Entry<'a> {
 
 #[derive(Debug, PartialEq)]
 pub enum ParseError {
+    NoMagicNumber,
     EmptyLabel,
     MissingNewline,
     ExpectedObservation,
@@ -247,6 +249,9 @@ pub enum ParseError {
 impl fmt::Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let msg = match self {
+            ParseError::NoMagicNumber => {
+                "coach files must begin with a line containing only the text \"coach1\""
+            }
             ParseError::EmptyLabel => "entries must contain a nonempty first line",
             ParseError::MissingNewline => {
                 "newlines are required after the label and observations in an entry"
@@ -273,6 +278,12 @@ enum ConsumeResult<'a, T> {
 
 pub fn parse<'a>(text: &'a str, dest: &mut Entry<'a>) -> Result<(), ParseError> {
     let mut remaining = text;
+
+    if remaining.starts_with("coach1\n") {
+        remaining = &remaining[7..];
+    } else {
+        return Err(ParseError::NoMagicNumber);
+    }
 
     match remaining.find('\n') {
         Some(0) => return Err(ParseError::EmptyLabel),
@@ -480,7 +491,7 @@ mod tests {
             notes: vec![],
         };
 
-        assert_eq!("Test\n\n", e.to_string())
+        assert_eq!("coach1\nTest\n\n", e.to_string())
     }
 
     #[test]
@@ -502,7 +513,7 @@ mod tests {
             notes: vec![],
         };
 
-        assert_eq!("Test\nkey: value1\nkey: value2\n\n", e.to_string())
+        assert_eq!("coach1\nTest\nkey: value1\nkey: value2\n\n", e.to_string())
     }
 
     #[test]
@@ -521,7 +532,8 @@ mod tests {
         };
 
         assert_eq!(
-            "Test
+            "coach1
+Test
 
 TODO take a break
 WORKING learn rust
@@ -553,7 +565,8 @@ CANCELLED teach the dog rust
         };
 
         assert_eq!(
-            "Test
+            "coach1
+Test
 
 * <2021-10-31 Sun 21:00> working in the lab late one night
 * <2021-10-31 Sun 22:10> my eyes beheld an eerie sight
@@ -577,7 +590,8 @@ CANCELLED teach the dog rust
         };
 
         assert_eq!(
-            "Test
+            "coach1
+Test
 
 dogs can't type
 
@@ -590,7 +604,8 @@ from her palm pilot
         )
     }
 
-    const MESSAGE: &str = "Test
+    const MESSAGE: &str = "coach1
+Test
 key: value1
 key: value2
 
@@ -666,7 +681,7 @@ it is multiline
     #[test]
     fn test_parse_just_label() {
         let mut e = Entry::default();
-        let _ = parse("Label\n\n", &mut e).unwrap();
+        let _ = parse("coach1\nLabel\n\n", &mut e).unwrap();
         let expect = Entry {
             label: NoNewlines("Label"),
             ..Entry::default()
@@ -680,14 +695,14 @@ it is multiline
             label: NoNewlines("Label"),
             ..Entry::default()
         };
-        assert_eq!("Label\n\n", e.to_string());
+        assert_eq!("coach1\nLabel\n\n", e.to_string());
     }
 
     #[test]
     fn test_parse_no_terminator() {
-        let s = "Label\n\nNo terminator";
+        let s = "coach1\nLabel\n\nNo terminator";
         let mut e = Entry::default();
-        let _ = parse(&s, &mut e);
+        let _ = parse(s, &mut e);
     }
 
     #[test]

@@ -1,6 +1,6 @@
 use clap::{App, Arg, SubCommand};
 use std::error::Error;
-use std::fs::File;
+use std::fs::OpenOptions;
 use std::io::Write;
 use std::time::SystemTime;
 use time::format_description::FormatItem;
@@ -9,6 +9,9 @@ use time::OffsetDateTime;
 
 use coach::entry;
 use coach::files;
+
+// A typical entry made by hand right now is around 1-2K
+const MAX_ENTRY_SIZE_BYTES: usize = 8 * 1024;
 
 const DATE_FORMAT: &[FormatItem<'static>] =
     format_description!("[year]-[month repr:numerical]-[day]");
@@ -38,27 +41,31 @@ fn main() -> Result<(), Box<dyn Error>> {
     let dt_label = entry::promise_no_newlines(&dt_formatted);
 
     match matches.subcommand_name() {
-        Some("today") => println!("WOULDA RUN TODAY"),
-        Some("observe") => println!("WOULDA RUN OBSERVE"),
-        Some("cat") => {
-            let mut entry = entry::Entry::default();
-            let mut storage: Vec<u8> = Vec::new();
-            match files::read_entry_from_file(&mut storage, &mut entry, &dt_label.to_string()) {
-                Ok(_) => println!("{}", entry.to_string()),
-                Err(e) => {
-                    eprintln!("Error: {}", e);
-                    return Err(Box::new(e));
-                }
-            }
-            return Ok(());
+        Some("today") => {
+            let entry = entry::Entry {
+                label: dt_label,
+                ..entry::Entry::default()
+            };
+            let mut out = OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(entry.label.to_string())?;
+            out.write_all(entry.to_string().as_bytes())?;
+            out.sync_all()?;
         }
+        Some("cat") => {
+            with_entry_from_file(&dt_label.to_string(), |entry| print!("{}", entry));
+        }
+        Some("observe") => {}
         Some(_) | None => {
             let _ = app.print_long_help();
             println!();
-            return Ok(());
         }
     };
 
+    Ok(())
+
+    /* TODO CLEANUP
     let moment = SystemTime::now();
     let dt: OffsetDateTime = moment.into();
     let dt_label = dt.format(&DATE_FORMAT)?;
@@ -88,4 +95,16 @@ fn main() -> Result<(), Box<dyn Error>> {
     today.write_all(sample.to_string().as_bytes())?;
     today.sync_all()?;
     Ok(())
+    ***/
+}
+
+fn with_entry_from_file<F>(filename: &str, f: F) -> Result<(), Box<dyn Error>>
+where
+    F: FnOnce(&entry::Entry) -> Result<(), Box<dyn Error>>,
+{
+    let mut buf: Vec<u8> = Vec::new();
+    let text = files::read_bounded_str_from_file(&mut buf, filename, MAX_ENTRY_SIZE_BYTES)?;
+    let mut entry = entry::Entry::default();
+
+    f(&entry)
 }
