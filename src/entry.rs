@@ -10,11 +10,19 @@ use time::{OffsetDateTime, PrimitiveDateTime, UtcOffset};
 #[derive(Debug, PartialEq)]
 pub struct NoNewlines<'a>(&'a str);
 
-pub fn promise_no_newlines(s: &str) -> NoNewlines {
+pub fn as_no_newlines(s: &str) -> Option<NoNewlines> {
     if s.contains('\n') {
-        panic!("promise_no_newlines can't be called with {}", s);
+        None
+    } else {
+        Some(NoNewlines(s))
     }
-    NoNewlines(s)
+}
+
+pub fn promise_no_newlines(s: &str) -> NoNewlines {
+    match as_no_newlines(s) {
+        Some(n) => n,
+        None => panic!("promise_no_newlines can't be called with {}", s),
+    }
 }
 
 impl<'a> fmt::Display for NoNewlines<'a> {

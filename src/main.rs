@@ -16,6 +16,29 @@ const MAX_ENTRY_SIZE_BYTES: usize = 8 * 1024;
 const DATE_FORMAT: &[FormatItem<'static>] =
     format_description!("[year]-[month repr:numerical]-[day]");
 
+// TODO this validator for obs names is WRONG, I can say "Thing:thing:thing" "value"...
+fn no_newline_validator(val: String) -> Result<(), String> {
+    match entry::as_no_newlines(&val) {
+        Some(_) => Ok(()),
+        None => Err(String::from("argument can't contain newlines")),
+    }
+}
+
+fn observation_name_validator(val: String) -> Result<(), String> {
+    let nn = match entry::as_no_newlines(&val) {
+        Some(nn) => nn,
+        None => return Err(String::from("observation names can't contain newlines")),
+    };
+
+    if nn.to_string().contains(':') {
+        Err(String::from(
+            "observation names can't contain the colon character",
+        ))
+    } else {
+        Ok(())
+    }
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     let mut app = App::new("coach")
         .about("a journal and project manager")
@@ -26,8 +49,18 @@ fn main() -> Result<(), Box<dyn Error>> {
         .subcommand(
             SubCommand::with_name("observe")
                 .about("adds a key/value observation to the journal")
-                .arg(Arg::with_name("NAME").required(true).index(1))
-                .arg(Arg::with_name("VALUE").required(true).index(2)),
+                .arg(
+                    Arg::with_name("NAME")
+                        .required(true)
+                        .validator(observation_name_validator)
+                        .index(1),
+                )
+                .arg(
+                    Arg::with_name("VALUE")
+                        .required(true)
+                        .validator(no_newline_validator)
+                        .index(2),
+                ),
         )
         .subcommand(
             SubCommand::with_name("cat")
@@ -54,9 +87,33 @@ fn main() -> Result<(), Box<dyn Error>> {
             out.sync_all()?;
         }
         Some("cat") => {
-            with_entry_from_file(&dt_label.to_string(), |entry| print!("{}", entry));
+            with_entry_from_file(&dt_label.to_string(), |entry| {
+                print!("{}", entry);
+                Ok(())
+            })?;
         }
-        Some("observe") => {}
+        Some("observe") => {
+            let name_str = matches.value_of("NAME").unwrap();
+            let value_str = matches.value_of("VALUE").unwrap();
+
+            let name = entry::promise_no_newlines(name_str);
+            let value = entry::promise_no_newlines(value_str);
+
+            edit_file(&dt_label.to_string(), |_buf, entry| {
+                let obs = entry::Observation { name, value };
+                println!("WOULD HAVE OBSERVED {}", obs);
+                // AS FAR AS I CAN TELL, we can't really see what entry's lifetime is from here
+                // (we get a reference to "some lifetime" but maybe it's longer than the
+                //  enclosing scope.)
+                //
+                // We need a way to promise that the lifetime of entry is no longer than
+                // the lifetime of (say) dt_label.
+                //
+                // Could it be moved into here instead?
+                // entry.observations.push(obs);
+                Ok(())
+            })?;
+        }
         Some(_) | None => {
             let _ = app.print_long_help();
             println!();
@@ -98,13 +155,26 @@ fn main() -> Result<(), Box<dyn Error>> {
     ***/
 }
 
-fn with_entry_from_file<F>(filename: &str, f: F) -> Result<(), Box<dyn Error>>
+fn with_entry_from_file<F, T>(filename: &str, f: F) -> Result<T, Box<dyn Error>>
 where
-    F: FnOnce(&entry::Entry) -> Result<(), Box<dyn Error>>,
+    F: FnOnce(&mut entry::Entry) -> Result<T, Box<dyn Error>>,
 {
     let mut buf: Vec<u8> = Vec::new();
     let text = files::read_bounded_str_from_file(&mut buf, filename, MAX_ENTRY_SIZE_BYTES)?;
     let mut entry = entry::Entry::default();
+    let _ = entry::parse(text, &mut entry)?;
 
-    f(&entry)
+    f(&mut entry)
+}
+
+fn edit_file<F>(filename: &str, f: F) -> Result<(), Box<dyn Error>>
+where
+    F: FnOnce(&String, &mut entry::Entry) -> Result<(), Box<dyn Error>>,
+{
+    with_entry_from_file(filename, |mut entry| {
+        let buf = String::new();
+        let _ = f(&buf, &mut entry)?;
+        println!("TODO WOULD HAVE EDITED:\n{}", entry);
+        Ok(())
+    })
 }
