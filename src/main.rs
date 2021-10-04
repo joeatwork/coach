@@ -11,7 +11,7 @@ use coach::entry;
 use coach::files;
 
 // A typical entry made by hand right now is around 1-2K
-const MAX_ENTRY_SIZE_BYTES: usize = 32 * 1024;
+const MAX_ENTRY_SIZE_BYTES: usize = 8 * 1024;
 
 const DATE_FORMAT: &[FormatItem<'static>] =
     format_description!("[year]-[month repr:numerical]-[day]");

@@ -10,11 +10,15 @@ pub fn read_bounded_str_from_file<'a>(
 ) -> Result<&'a str, io::Error> {
     buf.resize(max_length, 0);
     let mut chunk = &mut buf[..];
+    let mut read_length: usize = 0;
     match File::open(filename) {
         Ok(mut f) => loop {
             match f.read(chunk) {
                 Ok(0) => break,
-                Ok(n) => chunk = &mut chunk[n..],
+                Ok(n) => {
+                    read_length += n;
+                    chunk = &mut chunk[n..];
+                }
                 Err(e) if e.kind() == ErrorKind::Interrupted => {}
                 Err(e) => return Err(e),
             }
@@ -29,6 +33,7 @@ pub fn read_bounded_str_from_file<'a>(
         ));
     }
 
+    buf.truncate(read_length);
     let text = match str::from_utf8(buf) {
         Ok(text) => text,
         Err(e) => {
