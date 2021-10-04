@@ -11,31 +11,22 @@ use coach::entry;
 use coach::files;
 
 // A typical entry made by hand right now is around 1-2K
-const MAX_ENTRY_SIZE_BYTES: usize = 8 * 1024;
+const MAX_ENTRY_SIZE_BYTES: usize = 32 * 1024;
 
 const DATE_FORMAT: &[FormatItem<'static>] =
     format_description!("[year]-[month repr:numerical]-[day]");
 
-// TODO this validator for obs names is WRONG, I can say "Thing:thing:thing" "value"...
 fn no_newline_validator(val: String) -> Result<(), String> {
-    match entry::as_no_newlines(&val) {
+    match entry::as_no_newlines(val) {
         Some(_) => Ok(()),
         None => Err(String::from("argument can't contain newlines")),
     }
 }
 
 fn observation_name_validator(val: String) -> Result<(), String> {
-    let nn = match entry::as_no_newlines(&val) {
-        Some(nn) => nn,
-        None => return Err(String::from("observation names can't contain newlines")),
-    };
-
-    if nn.to_string().contains(':') {
-        Err(String::from(
-            "observation names can't contain the colon character",
-        ))
-    } else {
-        Ok(())
+    match entry::as_observation_name(val) {
+        Some(_) => Ok(()),
+        None => Err(String::from("observation names must contain at least one character, and can't contain newlines or colons")),
     }
 }
 
@@ -71,10 +62,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     let moment = SystemTime::now();
     let dt: OffsetDateTime = moment.into();
     let dt_formatted = dt.format(&DATE_FORMAT)?;
-    let dt_label = entry::promise_no_newlines(&dt_formatted);
+    let dt_label = entry::as_no_newlines(dt_formatted).unwrap();
 
-    match matches.subcommand_name() {
-        Some("today") => {
+    match matches.subcommand() {
+        ("today", Some(_)) => {
             let entry = entry::Entry {
                 label: dt_label,
                 ..entry::Entry::default()
@@ -86,95 +77,44 @@ fn main() -> Result<(), Box<dyn Error>> {
             out.write_all(entry.to_string().as_bytes())?;
             out.sync_all()?;
         }
-        Some("cat") => {
-            with_entry_from_file(&dt_label.to_string(), |entry| {
-                print!("{}", entry);
-                Ok(())
-            })?;
+        ("cat", Some(_)) => {
+            let entry = entry_from_file(&dt_label.to_string())?;
+            print!("{}", entry);
         }
-        Some("observe") => {
-            let name_str = matches.value_of("NAME").unwrap();
-            let value_str = matches.value_of("VALUE").unwrap();
+        ("observe", Some(args)) => {
+            let name_str = args.value_of("NAME").unwrap();
+            let value_str = args.value_of("VALUE").unwrap();
+            let filename = dt_label.to_string();
 
-            let name = entry::promise_no_newlines(name_str);
-            let value = entry::promise_no_newlines(value_str);
+            let name = entry::as_observation_name(String::from(name_str)).unwrap();
+            let value = entry::as_no_newlines(String::from(value_str)).unwrap();
 
-            edit_file(&dt_label.to_string(), |_buf, entry| {
-                let obs = entry::Observation { name, value };
-                println!("WOULD HAVE OBSERVED {}", obs);
-                // AS FAR AS I CAN TELL, we can't really see what entry's lifetime is from here
-                // (we get a reference to "some lifetime" but maybe it's longer than the
-                //  enclosing scope.)
-                //
-                // We need a way to promise that the lifetime of entry is no longer than
-                // the lifetime of (say) dt_label.
-                //
-                // Could it be moved into here instead?
-                // entry.observations.push(obs);
-                Ok(())
-            })?;
+            let mut entry = entry_from_file(&filename)?;
+            entry.observations.push(entry::Observation { name, value });
+
+            // TODO: it'd be safer to write to a temp file and then
+            // copy it over rather than truncate and write here.
+            let mut newfile = OpenOptions::new()
+                .write(true)
+                .create_new(false)
+                .open(&filename)?;
+            newfile.write_all(entry.to_string().as_bytes())?;
+            newfile.sync_all()?;
         }
-        Some(_) | None => {
+        _ => {
             let _ = app.print_long_help();
             println!();
         }
     };
 
     Ok(())
-
-    /* TODO CLEANUP
-    let moment = SystemTime::now();
-    let dt: OffsetDateTime = moment.into();
-    let dt_label = dt.format(&DATE_FORMAT)?;
-
-    let mut today = File::create(&dt_label)?;
-
-    let sample = entry::Entry {
-        label: entry::promise_no_newlines(&dt_label),
-        observations: vec![entry::Observation {
-            name: entry::promise_no_newlines("example"),
-            value: entry::promise_no_newlines("this is an example entry"),
-        }],
-        tasks: vec![
-            entry::Task::Done(entry::promise_no_newlines("Write an example entry")),
-            entry::Task::Todo(entry::promise_no_newlines("Read an entry from a file")),
-        ],
-        events: vec![entry::Event {
-            when: dt,
-            text: entry::promise_no_newlines("created a cool new file"),
-        }],
-        notes: vec![entry::promise_nonempty_note(
-            "Notes go here, after observations and tasks",
-        )],
-    };
-
-    today.write_all(b"coach1\n")?;
-    today.write_all(sample.to_string().as_bytes())?;
-    today.sync_all()?;
-    Ok(())
-    ***/
 }
 
-fn with_entry_from_file<F, T>(filename: &str, f: F) -> Result<T, Box<dyn Error>>
-where
-    F: FnOnce(&mut entry::Entry) -> Result<T, Box<dyn Error>>,
-{
+fn entry_from_file(filename: &str) -> Result<entry::Entry, Box<dyn Error>> {
     let mut buf: Vec<u8> = Vec::new();
     let text = files::read_bounded_str_from_file(&mut buf, filename, MAX_ENTRY_SIZE_BYTES)?;
-    let mut entry = entry::Entry::default();
-    let _ = entry::parse(text, &mut entry)?;
-
-    f(&mut entry)
-}
-
-fn edit_file<F>(filename: &str, f: F) -> Result<(), Box<dyn Error>>
-where
-    F: FnOnce(&String, &mut entry::Entry) -> Result<(), Box<dyn Error>>,
-{
-    with_entry_from_file(filename, |mut entry| {
-        let buf = String::new();
-        let _ = f(&buf, &mut entry)?;
-        println!("TODO WOULD HAVE EDITED:\n{}", entry);
-        Ok(())
-    })
+    match entry::parse(text) {
+        Ok(e) => Ok(e),
+        Err(e) => Err(Box::new(e)),
+    }
 }

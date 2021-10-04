@@ -2,14 +2,13 @@
 use libfuzzer_sys::fuzz_target;
 extern crate coach;
 
-fuzz_target!(|original: coach::entry::Entry<'_>| {
+fuzz_target!(|original: coach::entry::Entry| {
     if original.label.to_string().is_empty() {
         return; // non-interesting case.
     }
 
     let original_s = original.to_string();
-    let mut parsed = coach::entry::Entry::default();
-    coach::entry::parse(&original_s, &mut parsed).unwrap();
+    let parsed = coach::entry::parse(&original_s).unwrap();
 
     if original.label != parsed.label {
         panic!(

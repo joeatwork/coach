@@ -8,9 +8,9 @@ use time::{OffsetDateTime, PrimitiveDateTime, UtcOffset};
 // You should only construct a NoNewlines if you know for a fact
 // that the contained string has no newlines.
 #[derive(Debug, PartialEq)]
-pub struct NoNewlines<'a>(&'a str);
+pub struct NoNewlines(String);
 
-pub fn as_no_newlines(s: &str) -> Option<NoNewlines> {
+pub fn as_no_newlines(s: String) -> Option<NoNewlines> {
     if s.contains('\n') {
         None
     } else {
@@ -18,69 +18,80 @@ pub fn as_no_newlines(s: &str) -> Option<NoNewlines> {
     }
 }
 
-pub fn promise_no_newlines(s: &str) -> NoNewlines {
-    match as_no_newlines(s) {
-        Some(n) => n,
-        None => panic!("promise_no_newlines can't be called with {}", s),
-    }
-}
-
-impl<'a> fmt::Display for NoNewlines<'a> {
+impl<'a> fmt::Display for NoNewlines {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let NoNewlines(s) = self;
         write!(f, "{}", s)
     }
 }
 
-impl<'a> Arbitrary<'a> for NoNewlines<'a> {
-    fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<NoNewlines<'a>> {
-        let raw = u.arbitrary::<&'a str>()?;
-        let clean = match raw.find('\n') {
-            Some(ix) => &raw[..ix],
-            None => raw,
-        };
-        Ok(NoNewlines(clean))
+fn arbitrary_without_match<'a, F>(
+    u: &mut Unstructured<'a>,
+    matcher: F,
+) -> arbitrary::Result<&'a str>
+where
+    F: Fn(char) -> bool,
+{
+    let raw = u.arbitrary::<&'a str>()?;
+    let clean = match raw.find(matcher) {
+        Some(ix) => &raw[..ix],
+        None => raw,
+    };
+    Ok(clean)
+}
+
+impl<'a> Arbitrary<'a> for NoNewlines {
+    fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<NoNewlines> {
+        let s = arbitrary_without_match(u, |c| c == '\n')?;
+        Ok(NoNewlines(s.to_string()))
     }
 }
 
 #[derive(Debug, PartialEq)]
-pub struct Observation<'a> {
-    pub name: NoNewlines<'a>,
-    pub value: NoNewlines<'a>,
+pub struct ObservationName(String);
+
+pub fn as_observation_name(s: String) -> Option<ObservationName> {
+    if s.is_empty() || s.contains(|c| c == '\n' || c == ':') {
+        return None;
+    }
+
+    Some(ObservationName(s))
 }
 
-impl<'a> Arbitrary<'a> for Observation<'a> {
-    fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Observation<'a>> {
-        let NoNewlines(raw_name) = u.arbitrary::<NoNewlines<'a>>()?;
-        let value = u.arbitrary::<NoNewlines<'a>>()?;
-
-        let name_text = match raw_name.find(':') {
-            Some(ix) => &raw_name[..ix],
-            None => raw_name,
-        };
-
-        Ok(Observation {
-            name: NoNewlines(name_text),
-            value,
-        })
+impl fmt::Display for ObservationName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 
-impl<'a> fmt::Display for Observation<'a> {
+impl<'a> Arbitrary<'a> for ObservationName {
+    fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<ObservationName> {
+        let s = arbitrary_without_match(u, |c| c == '\n' || c == ':')?;
+        Ok(ObservationName(s.to_string()))
+    }
+}
+
+#[derive(Arbitrary, Debug, PartialEq)]
+pub struct Observation {
+    pub name: ObservationName,
+    pub value: NoNewlines,
+}
+
+impl<'a> fmt::Display for Observation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}: {}", &self.name, &self.value)
     }
 }
 
 #[derive(Arbitrary, Debug, PartialEq)]
-pub enum Task<'a> {
-    Todo(NoNewlines<'a>),
-    Working(NoNewlines<'a>),
-    Done(NoNewlines<'a>),
-    Cancelled(NoNewlines<'a>),
+pub enum Task {
+    Todo(NoNewlines),
+    Working(NoNewlines),
+    Done(NoNewlines),
+    Cancelled(NoNewlines),
 }
 
-impl<'a> fmt::Display for Task<'a> {
+impl<'a> fmt::Display for Task {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Task::Todo(s) => write!(f, "TODO {}", s),
@@ -92,25 +103,25 @@ impl<'a> fmt::Display for Task<'a> {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct Event<'a> {
+pub struct Event {
     pub when: OffsetDateTime,
-    pub text: NoNewlines<'a>,
+    pub text: NoNewlines,
 }
 
 const TIMESTAMP_FORMAT: &[FormatItem<'static>] = format_description!(
     "[year]-[month repr:numerical]-[day] [weekday repr:short] [hour repr:24]:[minute]"
 );
 
-impl<'a> fmt::Display for Event<'a> {
+impl<'a> fmt::Display for Event {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let stamp = self.when.format(&TIMESTAMP_FORMAT).unwrap();
         write!(f, "<{}> {}", stamp, self.text)
     }
 }
 
-impl<'a> Arbitrary<'a> for Event<'a> {
+impl<'a> Arbitrary<'a> for Event {
     fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
-        let text = u.arbitrary::<NoNewlines<'a>>()?;
+        let text = u.arbitrary::<NoNewlines>()?;
         let when_stamp = u.int_in_range::<i64>(0..=2147483640)?;
         let when = OffsetDateTime::from_unix_timestamp(when_stamp).unwrap(); // when_stamp is not out of range
         Ok(Event { text, when })
@@ -118,9 +129,9 @@ impl<'a> Arbitrary<'a> for Event<'a> {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct Note<'a>(&'a str);
+pub struct Note(String);
 
-pub fn promise_nonempty_note(s: &str) -> Note {
+pub fn promise_nonempty_note(s: String) -> Note {
     if s.is_empty() {
         panic!("promise_nonempty_note called with an empty string");
     }
@@ -128,13 +139,13 @@ pub fn promise_nonempty_note(s: &str) -> Note {
     Note(s)
 }
 
-impl<'a> fmt::Display for Note<'a> {
+impl<'a> fmt::Display for Note {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
     }
 }
 
-impl<'a> Arbitrary<'a> for Note<'a> {
+impl<'a> Arbitrary<'a> for Note {
     // Lots of invariants here, it'd be nice if they were
     // enforced or marked someplace like NoNewlines is?
     fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
@@ -185,23 +196,23 @@ impl<'a> Arbitrary<'a> for Note<'a> {
             s = "x"
         }
 
-        Ok(Note(s))
+        Ok(Note(s.to_string()))
     }
 }
 
 #[derive(Arbitrary, Debug, PartialEq)]
-pub struct Entry<'a> {
-    pub label: NoNewlines<'a>,
-    pub observations: Vec<Observation<'a>>,
-    pub tasks: Vec<Task<'a>>,
-    pub events: Vec<Event<'a>>,
-    pub notes: Vec<Note<'a>>,
+pub struct Entry {
+    pub label: NoNewlines,
+    pub observations: Vec<Observation>,
+    pub tasks: Vec<Task>,
+    pub events: Vec<Event>,
+    pub notes: Vec<Note>,
 }
 
-impl<'a> Default for Entry<'a> {
+impl<'a> Default for Entry {
     fn default() -> Self {
         Entry {
-            label: NoNewlines("PLACEHOLDER"),
+            label: NoNewlines(String::from("PLACEHOLDER")),
             observations: vec![],
             tasks: vec![],
             events: vec![],
@@ -210,7 +221,7 @@ impl<'a> Default for Entry<'a> {
     }
 }
 
-impl<'a> fmt::Display for Entry<'a> {
+impl<'a> fmt::Display for Entry {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "coach1")?;
         writeln!(f, "{}", self.label)?;
@@ -284,8 +295,13 @@ enum ConsumeResult<'a, T> {
     Problem(ParseError),
 }
 
-pub fn parse<'a>(text: &'a str, dest: &mut Entry<'a>) -> Result<(), ParseError> {
+pub fn parse(text: &str) -> Result<Entry, ParseError> {
     let mut remaining = text;
+    let label: NoNewlines;
+    let mut observations: Vec<Observation> = vec![];
+    let mut tasks: Vec<Task> = vec![];
+    let mut events: Vec<Event> = vec![];
+    let mut notes: Vec<Note> = vec![];
 
     if remaining.starts_with("coach1\n") {
         remaining = &remaining[7..];
@@ -296,7 +312,7 @@ pub fn parse<'a>(text: &'a str, dest: &mut Entry<'a>) -> Result<(), ParseError> 
     match remaining.find('\n') {
         Some(0) => return Err(ParseError::EmptyLabel),
         Some(ix) => {
-            dest.label = NoNewlines(&remaining[..ix]);
+            label = NoNewlines(String::from(&remaining[..ix]));
             remaining = &remaining[ix + 1..];
         }
         None => return Err(ParseError::MissingNewline),
@@ -308,7 +324,7 @@ pub fn parse<'a>(text: &'a str, dest: &mut Entry<'a>) -> Result<(), ParseError> 
                 remaining: r,
                 found,
             } => {
-                dest.observations.push(found);
+                observations.push(found);
                 remaining = r;
             }
             ConsumeResult::NotFound => break,
@@ -325,7 +341,7 @@ pub fn parse<'a>(text: &'a str, dest: &mut Entry<'a>) -> Result<(), ParseError> 
                 found,
             } => {
                 remaining = r;
-                dest.tasks.push(found);
+                tasks.push(found);
                 continue;
             }
             ConsumeResult::Problem(err) => return Err(err),
@@ -338,7 +354,7 @@ pub fn parse<'a>(text: &'a str, dest: &mut Entry<'a>) -> Result<(), ParseError> 
                 found,
             } => {
                 remaining = r;
-                dest.events.push(found);
+                events.push(found);
                 continue;
             }
             ConsumeResult::Problem(err) => return Err(err),
@@ -353,14 +369,20 @@ pub fn parse<'a>(text: &'a str, dest: &mut Entry<'a>) -> Result<(), ParseError> 
                 found,
             } => {
                 remaining = r;
-                dest.notes.push(found);
+                notes.push(found);
             }
             ConsumeResult::Problem(err) => return Err(err),
             ConsumeResult::NotFound => (),
         };
     }
 
-    Ok(())
+    Ok(Entry {
+        label,
+        observations,
+        tasks,
+        events,
+        notes,
+    })
 }
 
 fn consume_observation(remaining: &str) -> ConsumeResult<'_, Observation> {
@@ -382,15 +404,15 @@ fn consume_observation(remaining: &str) -> ConsumeResult<'_, Observation> {
         Some(ix) => ConsumeResult::Found {
             remaining: &remaining[obs_end + 1..],
             found: Observation {
-                name: NoNewlines(&obs_line[..ix]),
-                value: NoNewlines(&obs_line[ix + 2..]),
+                name: ObservationName(String::from(&obs_line[..ix])),
+                value: NoNewlines(String::from(&obs_line[ix + 2..])),
             },
         },
         None => ConsumeResult::Problem(ParseError::ExpectedObservation),
     }
 }
 
-fn consume_task(remaining: &str) -> ConsumeResult<'_, Task<'_>> {
+fn consume_task(remaining: &str) -> ConsumeResult<'_, Task> {
     let (task_end, rest) = match remaining.find('\n') {
         Some(ix) => (ix, &remaining[ix + 1..]),
         None => (remaining.len(), &remaining[remaining.len()..]),
@@ -401,10 +423,12 @@ fn consume_task(remaining: &str) -> ConsumeResult<'_, Task<'_>> {
     }
 
     let found = match remaining {
-        x if x.starts_with("TODO ") => Task::Todo(NoNewlines(&x[5..task_end])),
-        x if x.starts_with("WORKING ") => Task::Working(NoNewlines(&x[8..task_end])),
-        x if x.starts_with("DONE ") => Task::Done(NoNewlines(&x[5..task_end])),
-        x if x.starts_with("CANCELLED ") => Task::Cancelled(NoNewlines(&x[10..task_end])),
+        x if x.starts_with("TODO ") => Task::Todo(NoNewlines(String::from(&x[5..task_end]))),
+        x if x.starts_with("WORKING ") => Task::Working(NoNewlines(String::from(&x[8..task_end]))),
+        x if x.starts_with("DONE ") => Task::Done(NoNewlines(String::from(&x[5..task_end]))),
+        x if x.starts_with("CANCELLED ") => {
+            Task::Cancelled(NoNewlines(String::from(&x[10..task_end])))
+        }
         _ => return ConsumeResult::NotFound,
     };
 
@@ -452,7 +476,7 @@ fn consume_event(remaining: &str) -> ConsumeResult<'_, Event> {
 
     ConsumeResult::Found {
         found: Event {
-            text: NoNewlines(body_text.trim_start()),
+            text: NoNewlines(String::from(body_text.trim_start())),
             when: dt,
         },
         remaining: rest,
@@ -480,7 +504,7 @@ fn consume_note(remaining: &str) -> ConsumeResult<'_, Note> {
 
     ConsumeResult::Found {
         remaining: ret_remain,
-        found: Note(note_text),
+        found: Note(String::from(note_text)),
     }
 }
 
@@ -492,7 +516,7 @@ mod tests {
     #[test]
     fn test_empty_entry_to_string() {
         let e = Entry {
-            label: NoNewlines("Test"),
+            label: NoNewlines(String::from("Test")),
             observations: vec![],
             tasks: vec![],
             events: vec![],
@@ -505,15 +529,15 @@ mod tests {
     #[test]
     fn test_entry_observations_to_string() {
         let e = Entry {
-            label: NoNewlines("Test"),
+            label: NoNewlines(String::from("Test")),
             observations: vec![
                 Observation {
-                    name: NoNewlines("key"),
-                    value: NoNewlines("value1"),
+                    name: ObservationName(String::from("key")),
+                    value: NoNewlines(String::from("value1")),
                 },
                 Observation {
-                    name: NoNewlines("key"),
-                    value: NoNewlines("value2"),
+                    name: ObservationName(String::from("key")),
+                    value: NoNewlines(String::from("value2")),
                 },
             ],
             tasks: vec![],
@@ -527,13 +551,13 @@ mod tests {
     #[test]
     fn test_entry_tasks_to_string() {
         let e = Entry {
-            label: NoNewlines("Test"),
+            label: NoNewlines(String::from("Test")),
             observations: vec![],
             tasks: vec![
-                super::Task::Todo(NoNewlines("take a break")),
-                Task::Working(NoNewlines("learn rust")),
-                Task::Done(NoNewlines("pet the dog")),
-                Task::Cancelled(NoNewlines("teach the dog rust")),
+                super::Task::Todo(NoNewlines(String::from("take a break"))),
+                Task::Working(NoNewlines(String::from("learn rust"))),
+                Task::Done(NoNewlines(String::from("pet the dog"))),
+                Task::Cancelled(NoNewlines(String::from("teach the dog rust"))),
             ],
             events: vec![],
             notes: vec![],
@@ -556,17 +580,17 @@ CANCELLED teach the dog rust
     #[test]
     fn test_entry_events_to_string() {
         let e = Entry {
-            label: NoNewlines("Test"),
+            label: NoNewlines(String::from("Test")),
             observations: vec![],
             tasks: vec![],
             events: vec![
                 Event {
                     when: datetime!(2021-10-31 21:00 UTC),
-                    text: NoNewlines("working in the lab late one night"),
+                    text: NoNewlines(String::from("working in the lab late one night")),
                 },
                 Event {
                     when: datetime!(2021-10-31 22:10 UTC),
-                    text: NoNewlines("my eyes beheld an eerie sight"),
+                    text: NoNewlines(String::from("my eyes beheld an eerie sight")),
                 },
             ],
             notes: vec![],
@@ -587,13 +611,15 @@ Test
     #[test]
     fn test_entry_notes_to_string() {
         let e = Entry {
-            label: NoNewlines("Test"),
+            label: NoNewlines(String::from("Test")),
             observations: vec![],
             tasks: vec![],
             events: vec![],
             notes: vec![
-                Note("dogs can't type"),
-                Note("It's a good thing\nthe dog learned graffiti\nfrom her palm pilot"),
+                Note(String::from("dogs can't type")),
+                Note(String::from(
+                    "It's a good thing\nthe dog learned graffiti\nfrom her palm pilot",
+                )),
             ],
         };
 
@@ -634,21 +660,19 @@ it is multiline
 
     #[test]
     fn test_parse_label() {
-        let mut e = Entry::default();
-        let _ = parse(MESSAGE, &mut e).unwrap();
-        assert_eq!(NoNewlines("Test"), e.label);
+        let e = parse(MESSAGE).unwrap();
+        assert_eq!(NoNewlines(String::from("Test")), e.label);
     }
 
     #[test]
     fn test_parse_tasks() {
-        let mut e = Entry::default();
-        let _ = parse(MESSAGE, &mut e).unwrap();
+        let e = parse(MESSAGE).unwrap();
         assert_eq!(
             vec![
-                Task::Todo(NoNewlines("take a break")),
-                Task::Working(NoNewlines("learn rust")),
-                Task::Done(NoNewlines("pet the dog")),
-                Task::Cancelled(NoNewlines("teach the dog rust")),
+                Task::Todo(NoNewlines(String::from("take a break"))),
+                Task::Working(NoNewlines(String::from("learn rust"))),
+                Task::Done(NoNewlines(String::from("pet the dog"))),
+                Task::Cancelled(NoNewlines(String::from("teach the dog rust"))),
             ],
             e.tasks
         );
@@ -656,17 +680,16 @@ it is multiline
 
     #[test]
     fn test_parse_events() {
-        let mut e = Entry::default();
-        let _ = parse(MESSAGE, &mut e).unwrap();
+        let e = parse(MESSAGE).unwrap();
         assert_eq!(
             vec![
                 Event {
                     when: datetime!(2021-10-31 21:10:00 UTC),
-                    text: NoNewlines("working in the lab late one night"),
+                    text: NoNewlines(String::from("working in the lab late one night")),
                 },
                 Event {
                     when: datetime!(2021-10-31 22:10:00 UTC),
-                    text: NoNewlines("my eyes beheld an eerie sight"),
+                    text: NoNewlines(String::from("my eyes beheld an eerie sight")),
                 },
             ],
             e.events
@@ -675,12 +698,11 @@ it is multiline
 
     #[test]
     fn test_parse_notes() {
-        let mut e = Entry::default();
-        let _ = parse(MESSAGE, &mut e).unwrap();
+        let e = parse(MESSAGE).unwrap();
         assert_eq!(
             vec![
-                Note("This is note one"),
-                Note("And this is note two,\nit is multiline")
+                Note(String::from("This is note one")),
+                Note(String::from("And this is note two,\nit is multiline")),
             ],
             e.notes
         );
@@ -688,10 +710,9 @@ it is multiline
 
     #[test]
     fn test_parse_just_label() {
-        let mut e = Entry::default();
-        let _ = parse("coach1\nLabel\n\n", &mut e).unwrap();
+        let e = parse("coach1\nLabel\n\n").unwrap();
         let expect = Entry {
-            label: NoNewlines("Label"),
+            label: NoNewlines(String::from("Label")),
             ..Entry::default()
         };
         assert_eq!(expect, e);
@@ -700,7 +721,7 @@ it is multiline
     #[test]
     fn test_display_pure_label() {
         let e = Entry {
-            label: NoNewlines("Label"),
+            label: NoNewlines(String::from("Label")),
             ..Entry::default()
         };
         assert_eq!("coach1\nLabel\n\n", e.to_string());
@@ -709,22 +730,20 @@ it is multiline
     #[test]
     fn test_parse_no_terminator() {
         let s = "coach1\nLabel\n\nNo terminator";
-        let mut e = Entry::default();
-        let _ = parse(s, &mut e);
+        let _ = parse(s).unwrap();
     }
 
     #[test]
     fn test_roundtrips() {
         let source = Entry {
-            label: NoNewlines("Test"),
+            label: NoNewlines(String::from("Test")),
             observations: vec![],
-            tasks: vec![Task::Working(NoNewlines("Task"))],
+            tasks: vec![Task::Working(NoNewlines(String::from("Task")))],
             events: vec![],
             notes: vec![],
         };
         let stringed = source.to_string();
-        let mut dest = Entry::default();
-        let _ = parse(&stringed, &mut dest);
+        let dest = parse(&stringed).unwrap();
         assert_eq!(source, dest);
     }
 }
