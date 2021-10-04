@@ -1,6 +1,7 @@
 use arbitrary::{Arbitrary, Unstructured};
 use std::error::Error;
 use std::fmt;
+use std::mem;
 use time::format_description::FormatItem;
 use time::macros::format_description;
 use time::{OffsetDateTime, PrimitiveDateTime, UtcOffset};
@@ -15,6 +16,12 @@ pub fn as_no_newlines(s: String) -> Option<NoNewlines> {
         None
     } else {
         Some(NoNewlines(s))
+    }
+}
+
+impl Default for NoNewlines {
+    fn default() -> NoNewlines {
+        NoNewlines(String::new())
     }
 }
 
@@ -89,6 +96,17 @@ pub enum Task {
     Working(NoNewlines),
     Done(NoNewlines),
     Cancelled(NoNewlines),
+}
+
+impl Task {
+    pub fn message(&mut self) -> &mut NoNewlines {
+        match self {
+            Task::Todo(s) => s,
+            Task::Done(s) => s,
+            Task::Working(s) => s,
+            Task::Cancelled(s) => s,
+        }
+    }
 }
 
 impl<'a> fmt::Display for Task {
@@ -207,6 +225,17 @@ pub struct Entry {
     pub tasks: Vec<Task>,
     pub events: Vec<Event>,
     pub notes: Vec<Note>,
+}
+
+impl Entry {
+    pub fn update_task<F>(&mut self, ix: usize, updater: F)
+    where
+        F: FnOnce(NoNewlines) -> Task,
+    {
+        let old_message = mem::take(self.tasks[ix].message());
+        let new_task = updater(old_message);
+        let _ = mem::replace(&mut self.tasks[ix], new_task);
+    }
 }
 
 impl<'a> Default for Entry {
