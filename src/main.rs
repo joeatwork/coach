@@ -2,8 +2,6 @@ use clap::{App, Arg, SubCommand};
 use std::error::Error;
 use std::fmt;
 use std::fmt::Display;
-use std::fs::OpenOptions;
-use std::io::Write;
 use std::time::SystemTime;
 use time::format_description::FormatItem;
 use time::macros::format_description;
@@ -88,6 +86,14 @@ fn main() -> Result<(), Box<dyn Error>> {
             SubCommand::with_name("task")
                 .about("manages the TODO list from this entry")
                 .subcommand(
+                    SubCommand::with_name("new").about("create a new task").arg(
+                        Arg::with_name("MESSAGE")
+                            .required(true)
+                            .validator(no_newline_validator)
+                            .index(1),
+                    ),
+                )
+                .subcommand(
                     SubCommand::with_name("todo")
                         .about("mark an item on the todo list as TODO")
                         .arg(Arg::with_name("INDEX").required(true).index(1)),
@@ -123,15 +129,10 @@ fn main() -> Result<(), Box<dyn Error>> {
                 label: dt_label,
                 ..entry::Entry::default()
             };
-            let mut out = OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&filename)?;
-            out.write_all(entry.to_string().as_bytes())?;
-            out.sync_all()?;
+            files::new_entry_file(&filename, &entry)?;
         }
         ("cat", Some(_)) => {
-            let entry = entry_from_file(&dt_label.to_string())?;
+            let entry = files::entry_from_file(&dt_label.to_string(), MAX_ENTRY_SIZE_BYTES)?;
             print!("{}", entry);
         }
         ("observe", Some(args)) => {
@@ -140,24 +141,28 @@ fn main() -> Result<(), Box<dyn Error>> {
             observe(&filename, name_str, value_str)?
         }
         ("task", Some(args)) => match args.subcommand() {
+            ("new", Some(args)) => {
+                let message = args.value_of("MESSAGE").unwrap();
+                new_task(&filename, message)?;
+            }
             ("todo", Some(args)) => {
                 let ix_arg = args.value_of("INDEX").unwrap();
-                update_todo(&filename, ix_arg, entry::Task::Todo)?;
+                update_task(&filename, ix_arg, entry::Task::Todo)?;
             }
             ("done", Some(args)) => {
                 let ix_arg = args.value_of("INDEX").unwrap();
-                update_todo(&filename, ix_arg, entry::Task::Done)?;
+                update_task(&filename, ix_arg, entry::Task::Done)?;
             }
             ("cancel", Some(args)) => {
                 let ix_arg = args.value_of("INDEX").unwrap();
-                update_todo(&filename, ix_arg, entry::Task::Cancelled)?;
+                update_task(&filename, ix_arg, entry::Task::Cancelled)?;
             }
             ("working", Some(args)) => {
                 let ix_arg = args.value_of("INDEX").unwrap();
-                update_todo(&filename, ix_arg, entry::Task::Working)?;
+                update_task(&filename, ix_arg, entry::Task::Working)?;
             }
             _ => {
-                let entry = entry_from_file(&filename)?;
+                let entry = files::entry_from_file(&filename, MAX_ENTRY_SIZE_BYTES)?;
                 for (ix, t) in entry.tasks.iter().enumerate() {
                     println!("{}: {}", ix + 1, t)
                 }
@@ -176,22 +181,29 @@ fn observe(filename: &str, name_str: &str, value_str: &str) -> Result<(), Box<dy
     let name = entry::as_observation_name(String::from(name_str)).unwrap();
     let value = entry::as_no_newlines(String::from(value_str)).unwrap();
 
-    let mut entry = entry_from_file(filename)?;
-    entry.observations.push(entry::Observation { name, value });
+    let mut entry = files::entry_from_file(filename, MAX_ENTRY_SIZE_BYTES)?;
+    let observation = entry::Observation { name, value };
+    println!("{}", observation);
+    entry.observations.push(observation);
 
-    // TODO: it'd be safer to write to a temp file and then
-    // copy it over rather than truncate and write here.
-    let mut newfile = OpenOptions::new()
-        .write(true)
-        .create_new(false)
-        .open(&filename)?;
-    newfile.write_all(entry.to_string().as_bytes())?;
-    newfile.sync_all()?;
+    files::entry_to_file(filename, &entry)?;
 
     Ok(())
 }
 
-fn update_todo<F>(filename: &str, index_str: &str, updater: F) -> Result<(), Box<dyn Error>>
+fn new_task(filename: &str, message: &str) -> Result<(), Box<dyn Error>> {
+    let mut entry = files::entry_from_file(filename, MAX_ENTRY_SIZE_BYTES)?;
+    let message = entry::as_no_newlines(message.to_string()).unwrap();
+    let task = entry::Task::Todo(message);
+    println!("{}", &task);
+    entry.tasks.push(task);
+
+    files::entry_to_file(filename, &entry)?;
+
+    Ok(())
+}
+
+fn update_task<F>(filename: &str, index_str: &str, updater: F) -> Result<(), Box<dyn Error>>
 where
     F: FnOnce(entry::NoNewlines) -> entry::Task,
 {
@@ -204,7 +216,7 @@ where
 
     let ix = ix_plus_one - 1;
 
-    let mut entry = entry_from_file(filename)?;
+    let mut entry = files::entry_from_file(filename, MAX_ENTRY_SIZE_BYTES)?;
     if ix >= entry.tasks.len() {
         return Err(Box::new(CommandError {
             desc: format!("{} is to large, no task found", ix_plus_one),
@@ -214,22 +226,7 @@ where
     entry.update_task(ix, updater);
 
     println!("{}", entry.tasks[ix]);
-
-    let mut newfile = OpenOptions::new()
-        .write(true)
-        .create_new(false)
-        .open(&filename)?;
-    newfile.write_all(entry.to_string().as_bytes())?;
-    newfile.sync_all()?;
+    files::entry_to_file(filename, &entry)?;
 
     Ok(())
-}
-
-fn entry_from_file(filename: &str) -> Result<entry::Entry, Box<dyn Error>> {
-    let mut buf: Vec<u8> = Vec::new();
-    let text = files::read_bounded_str_from_file(&mut buf, filename, MAX_ENTRY_SIZE_BYTES)?;
-    match entry::parse(text) {
-        Ok(e) => Ok(e),
-        Err(e) => Err(Box::new(e)),
-    }
 }
