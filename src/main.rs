@@ -113,12 +113,21 @@ fn main() -> Result<(), Box<dyn Error>> {
                         .about("mark an item on the todo list as CANCELLED")
                         .arg(Arg::with_name("INDEX").required(true).index(1)),
                 ),
+        )
+        .subcommand(
+            SubCommand::with_name("event")
+                .about("lists events, or makes note of a new event")
+                .arg(
+                    Arg::with_name("MESSAGE")
+                        .validator(no_newline_validator)
+                        .index(1),
+                ),
         );
     let matches = app.clone().get_matches();
 
     let moment = SystemTime::now();
-    let dt: OffsetDateTime = moment.into();
-    let dt_formatted = dt.format(&DATE_FORMAT)?;
+    let when: OffsetDateTime = moment.into();
+    let dt_formatted = when.format(&DATE_FORMAT)?;
     let dt_label = entry::as_no_newlines(dt_formatted).unwrap();
 
     let filename = dt_label.to_string();
@@ -138,27 +147,34 @@ fn main() -> Result<(), Box<dyn Error>> {
         ("observe", Some(args)) => {
             let name_str = args.value_of("NAME").unwrap();
             let value_str = args.value_of("VALUE").unwrap();
-            observe(&filename, name_str, value_str)?
+            let name = entry::as_observation_name(name_str.to_string()).unwrap();
+            let value = entry::as_no_newlines(value_str.to_string()).unwrap();
+            observe(&filename, name, value)?
         }
         ("task", Some(args)) => match args.subcommand() {
             ("new", Some(args)) => {
                 let message = args.value_of("MESSAGE").unwrap();
+                let message = entry::as_no_newlines(message.to_string()).unwrap();
                 new_task(&filename, message)?;
             }
             ("todo", Some(args)) => {
                 let ix_arg = args.value_of("INDEX").unwrap();
+                let ix_arg: usize = ix_arg.parse()?;
                 update_task(&filename, ix_arg, entry::Task::Todo)?;
             }
             ("done", Some(args)) => {
                 let ix_arg = args.value_of("INDEX").unwrap();
+                let ix_arg: usize = ix_arg.parse()?;
                 update_task(&filename, ix_arg, entry::Task::Done)?;
             }
             ("cancel", Some(args)) => {
                 let ix_arg = args.value_of("INDEX").unwrap();
+                let ix_arg: usize = ix_arg.parse()?;
                 update_task(&filename, ix_arg, entry::Task::Cancelled)?;
             }
             ("working", Some(args)) => {
                 let ix_arg = args.value_of("INDEX").unwrap();
+                let ix_arg: usize = ix_arg.parse()?;
                 update_task(&filename, ix_arg, entry::Task::Working)?;
             }
             _ => {
@@ -168,6 +184,23 @@ fn main() -> Result<(), Box<dyn Error>> {
                 }
             }
         },
+        ("event", Some(args)) => {
+            let mut entry = files::entry_from_file(&filename, MAX_ENTRY_SIZE_BYTES)?;
+            match args.value_of("MESSAGE") {
+                Some(msg) => {
+                    let text = entry::as_no_newlines(msg.to_string()).unwrap();
+                    let event = entry::Event { when, text };
+                    println!("{}", event);
+                    entry.events.push(event);
+                    files::entry_to_file(&filename, &entry)?;
+                }
+                None => {
+                    for e in entry.events {
+                        println!("{}", e);
+                    }
+                }
+            }
+        }
         _ => {
             let _ = app.print_long_help();
             println!();
@@ -177,10 +210,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn observe(filename: &str, name_str: &str, value_str: &str) -> Result<(), Box<dyn Error>> {
-    let name = entry::as_observation_name(String::from(name_str)).unwrap();
-    let value = entry::as_no_newlines(String::from(value_str)).unwrap();
-
+fn observe(
+    filename: &str,
+    name: entry::ObservationName,
+    value: entry::NoNewlines,
+) -> Result<(), Box<dyn Error>> {
     let mut entry = files::entry_from_file(filename, MAX_ENTRY_SIZE_BYTES)?;
     let observation = entry::Observation { name, value };
     println!("{}", observation);
@@ -191,9 +225,8 @@ fn observe(filename: &str, name_str: &str, value_str: &str) -> Result<(), Box<dy
     Ok(())
 }
 
-fn new_task(filename: &str, message: &str) -> Result<(), Box<dyn Error>> {
+fn new_task(filename: &str, message: entry::NoNewlines) -> Result<(), Box<dyn Error>> {
     let mut entry = files::entry_from_file(filename, MAX_ENTRY_SIZE_BYTES)?;
-    let message = entry::as_no_newlines(message.to_string()).unwrap();
     let task = entry::Task::Todo(message);
     println!("{}", &task);
     entry.tasks.push(task);
@@ -203,11 +236,10 @@ fn new_task(filename: &str, message: &str) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn update_task<F>(filename: &str, index_str: &str, updater: F) -> Result<(), Box<dyn Error>>
+fn update_task<F>(filename: &str, ix_plus_one: usize, updater: F) -> Result<(), Box<dyn Error>>
 where
     F: FnOnce(entry::NoNewlines) -> entry::Task,
 {
-    let ix_plus_one: usize = index_str.parse()?;
     if ix_plus_one == 0 {
         return Err(Box::new(CommandError {
             desc: String::from("task indexes start at 1"),
