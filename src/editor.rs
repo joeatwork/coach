@@ -4,6 +4,8 @@ use std::fs::OpenOptions;
 use std::io;
 use std::process::Command;
 
+// $EDITOR support is minimal - EDITOR isn't run through a shell,
+// so cool (and common!) tricks like EDITOR='vim -e' will break.
 pub fn launch_editor(filename: &str) -> Result<(), io::Error> {
     let vi = OsString::from("vi");
     let editor = env::var_os("EDITOR").unwrap_or(vi);
