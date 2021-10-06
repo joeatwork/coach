@@ -59,17 +59,35 @@ impl Error for CommandError {
 fn main() -> Result<(), Box<dyn Error>> {
     let mut app = App::new("coach")
         .about("a journal and project manager")
+        .long_about(
+            "Coach is a semi-structured productivity journal file format, and a command
+line tool for managing coach files. You can use coach to keep track of a daily
+TODO list, keep a record of observations of key metrics, and keep daily 
+progress notes.",
+        )
         .subcommand(
             SubCommand::with_name("today")
-                .about("creates a new journal file in the current working directory"),
+                .about("creates a new journal file in the current working directory")
+                .long_about(
+                    "today will create a new daily entry file in the current working directory,
+named after the current date. Other commands will write to or edit that file.",
+                ),
         )
         .subcommand(
             SubCommand::with_name("cat")
-                .about("writes the contents of a journal entry to standard out"),
+                .about("writes the contents of the current journal entry to standard out"),
         )
         .subcommand(
             SubCommand::with_name("observe")
                 .about("adds a key/value observation to the journal")
+                .long_about(
+                    "coach observe adds a key / value pair to the current journal entry. You can
+use observations to keep track of key project metrics over time. For example,
+to add an observation about the weather to your entry, you could use:
+
+    coach observe weather \"bright and sunny\"
+",
+                )
                 .arg(
                     Arg::with_name("NAME")
                         .required(true)
@@ -86,6 +104,22 @@ fn main() -> Result<(), Box<dyn Error>> {
         .subcommand(
             SubCommand::with_name("task")
                 .about("manages the TODO list from this entry")
+                .long_about(
+                    "You can use coach task to create new tasks on the to-do list for the current
+entry, view the day's tasks, and change the state of existing tasks.
+
+coach tasks are either TODO (you need to get to them), DONE (already completed),
+WORKING (this task is in progress), or CANCELLED (you've changed your mind
+about doing the task.). You can list all of an entry's tasks with:
+
+    coach task
+
+You can make changes to individual tasks using their indexes - for example,
+you can set the second task listed by 'coach task' to DONE with:
+
+    coach task done 2
+",
+                )
                 .subcommand(
                     SubCommand::with_name("new").about("create a new task").arg(
                         Arg::with_name("MESSAGE")
@@ -96,36 +130,57 @@ fn main() -> Result<(), Box<dyn Error>> {
                 )
                 .subcommand(
                     SubCommand::with_name("todo")
-                        .about("mark an item on the todo list as TODO")
+                        .about("mark a task as TODO")
                         .arg(Arg::with_name("INDEX").required(true).index(1)),
                 )
                 .subcommand(
                     SubCommand::with_name("working")
-                        .about("mark an item on the todo list as WORKING")
+                        .about("mark a task as WORKING")
                         .arg(Arg::with_name("INDEX").required(true).index(1)),
                 )
                 .subcommand(
                     SubCommand::with_name("done")
-                        .about("mark an item on the todo list as DONE")
+                        .about("mark a task as DONE")
                         .arg(Arg::with_name("INDEX").required(true).index(1)),
                 )
                 .subcommand(
                     SubCommand::with_name("cancel")
-                        .about("mark an item on the todo list as CANCELLED")
+                        .about("mark a task as CANCELLED")
                         .arg(Arg::with_name("INDEX").required(true).index(1)),
                 ),
         )
         .subcommand(
             SubCommand::with_name("event")
                 .about("lists events, or makes note of a new event")
+                .long_about(
+                    "Coach events are brief notes that include a timestamp. You can use them for
+simple time tracking, or to check in during your work. To list all of the
+events in an entry, use:
+
+    coach event
+
+To make note of a new event, include a message as an argument, like this:
+
+    coach event \"wrote about text for the event command\"
+",
+                )
                 .arg(
                     Arg::with_name("MESSAGE")
                         .validator(no_newline_validator)
                         .index(1),
                 ),
         )
-        .subcommand(SubCommand::with_name("note").about("add a note to this entry"))
-        .subcommand(SubCommand::with_name("edit").about("opens coach file with $EDTIOR"));
+        .subcommand(
+            SubCommand::with_name("note")
+                .about("add a note to this entry")
+                .long_about(
+                    "note will open a text editor and allow you to add one or more notes,
+to the current entry. You can separate notes by blank lines.",
+                ),
+        )
+        .subcommand(
+            SubCommand::with_name("edit").about("opens the current coach entry with a text editor"),
+        );
     let matches = app.clone().get_matches();
 
     let moment = SystemTime::now();
