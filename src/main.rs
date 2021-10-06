@@ -86,17 +86,20 @@ use observations to keep track of key project metrics over time. For example,
 to add an observation about the weather to your entry, you could use:
 
     coach observe weather \"bright and sunny\"
+
+To see a list of all of the observations in the current entry, use
+
+    coach observe
 ",
                 )
                 .arg(
                     Arg::with_name("NAME")
-                        .required(true)
+                        .requires("VALUE")
                         .validator(observation_name_validator)
                         .index(1),
                 )
                 .arg(
                     Arg::with_name("VALUE")
-                        .required(true)
                         .validator(no_newline_validator)
                         .index(2),
                 ),
@@ -203,13 +206,20 @@ to the current entry. You can separate notes by blank lines.",
             let entry = files::entry_from_file(&dt_label.to_string(), MAX_ENTRY_SIZE_BYTES)?;
             print!("{}", entry);
         }
-        ("observe", Some(args)) => {
-            let name_str = args.value_of("NAME").unwrap();
-            let value_str = args.value_of("VALUE").unwrap();
-            let name = entry::as_observation_name(name_str.to_string()).unwrap();
-            let value = entry::as_no_newlines(value_str.to_string()).unwrap();
-            observe(&filename, name, value)?
-        }
+        ("observe", Some(args)) => match args.value_of("NAME") {
+            Some(name_str) => {
+                let value_str = args.value_of("VALUE").unwrap();
+                let name = entry::as_observation_name(name_str.to_string()).unwrap();
+                let value = entry::as_no_newlines(value_str.to_string()).unwrap();
+                observe(&filename, name, value)?;
+            }
+            None => {
+                let entry = files::entry_from_file(&filename, MAX_ENTRY_SIZE_BYTES)?;
+                for ob in entry.observations {
+                    println!("{}", ob);
+                }
+            }
+        },
         ("task", Some(args)) => match args.subcommand() {
             ("new", Some(args)) => {
                 let message = args.value_of("MESSAGE").unwrap();
@@ -279,6 +289,7 @@ to the current entry. You can separate notes by blank lines.",
             files::entry_to_file(&filename, &entry)?;
         }
         ("edit", _) => {
+            // TODO this is an easy way to corrupt your entry.
             editor::launch_editor(&filename)?;
         }
         _ => {
