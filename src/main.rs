@@ -7,6 +7,7 @@ use time::format_description::FormatItem;
 use time::macros::format_description;
 use time::OffsetDateTime;
 
+use coach::editor;
 use coach::entry;
 use coach::files;
 
@@ -122,7 +123,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                         .validator(no_newline_validator)
                         .index(1),
                 ),
-        );
+        )
+        .subcommand(SubCommand::with_name("edit").about("opens coach file with $EDTIOR"));
     let matches = app.clone().get_matches();
 
     let moment = SystemTime::now();
@@ -200,6 +202,9 @@ fn main() -> Result<(), Box<dyn Error>> {
                     }
                 }
             }
+        }
+        ("edit", _) => {
+            editor::launch_editor(&filename)?;
         }
         _ => {
             let _ = app.print_long_help();
