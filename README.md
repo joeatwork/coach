@@ -18,7 +18,7 @@ $ coach task
 2: TODO clean up README
 3: TODO write good --help messages for commands
 
-# you can mark a task as done using it's index
+# you can mark a task as done using its index
 $ coach task done 2
 
 # now you can see your changes in your to-do list
