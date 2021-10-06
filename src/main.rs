@@ -142,6 +142,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 ..entry::Entry::default()
             };
             files::new_entry_file(&filename, &entry)?;
+            println!("{}", &filename);
         }
         ("cat", Some(_)) => {
             let entry = files::entry_from_file(&dt_label.to_string(), MAX_ENTRY_SIZE_BYTES)?;

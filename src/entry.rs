@@ -236,7 +236,7 @@ impl<'a> Default for Entry {
 
 impl<'a> fmt::Display for Entry {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "coach1")?;
+        writeln!(f, "#coach")?;
         writeln!(f, "{}", self.label)?;
         for ob in self.observations.iter() {
             writeln!(f, "{}", ob)?;
@@ -282,7 +282,7 @@ impl fmt::Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let msg = match self {
             ParseError::NoMagicNumber => {
-                "coach files must begin with a line containing only the text \"coach1\""
+                "coach files must begin with a line containing only the text \"#coach\""
             }
             ParseError::EmptyLabel => "entries must contain a nonempty first line",
             ParseError::MissingNewline => {
@@ -316,7 +316,7 @@ pub fn parse(text: &str) -> Result<Entry, ParseError> {
     let mut events: Vec<Event> = vec![];
     let mut notes: Vec<Note> = vec![];
 
-    if remaining.starts_with("coach1\n") {
+    if remaining.starts_with("#coach\n") {
         remaining = &remaining[7..];
     } else {
         return Err(ParseError::NoMagicNumber);
