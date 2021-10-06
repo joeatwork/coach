@@ -157,6 +157,24 @@ pub fn promise_nonempty_note(s: String) -> Note {
     Note(s)
 }
 
+pub fn as_note(s: String) -> Option<Note> {
+    if s.is_empty() || s.contains("\n\n") || s.starts_with('\n') || s.ends_with('\n') {
+        return None;
+    }
+
+    match consume_task(&s) {
+        ConsumeResult::NotFound => {}
+        _ => return None,
+    }
+
+    match consume_event(&s) {
+        ConsumeResult::NotFound => {}
+        _ => return None,
+    }
+
+    Some(Note(s))
+}
+
 impl<'a> fmt::Display for Note {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
@@ -164,8 +182,6 @@ impl<'a> fmt::Display for Note {
 }
 
 impl<'a> Arbitrary<'a> for Note {
-    // Lots of invariants here, it'd be nice if they were
-    // enforced or marked someplace like NoNewlines is?
     fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
         let src = u.arbitrary::<&'a str>()?;
 
@@ -174,47 +190,15 @@ impl<'a> Arbitrary<'a> for Note {
             None => src,
         };
 
+        s = s.trim_end_matches('\n');
         while !s.is_empty() {
-            s = s.trim_matches('\n');
-
-            match consume_task(s) {
-                ConsumeResult::Found {
-                    remaining,
-                    found: _,
-                } => {
-                    s = remaining;
-                    continue;
-                }
-                ConsumeResult::Problem(_) => {
-                    s = &s[1..];
-                    continue;
-                }
-                ConsumeResult::NotFound => (),
+            if let Some(n) = as_note(s.to_string()) {
+                return Ok(n);
             }
-
-            match consume_event(s) {
-                ConsumeResult::Found {
-                    remaining,
-                    found: _,
-                } => {
-                    s = remaining;
-                    continue;
-                }
-                ConsumeResult::Problem(_) => {
-                    s = &s[1..];
-                    continue;
-                }
-                ConsumeResult::NotFound => (),
-            }
-
-            break;
+            s = &s[1..];
         }
 
-        if s.is_empty() {
-            s = "x"
-        }
-
-        Ok(Note(s.to_string()))
+        Ok(Note(String::from("x")))
     }
 }
 

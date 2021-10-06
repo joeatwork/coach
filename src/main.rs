@@ -64,6 +64,10 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .about("creates a new journal file in the current working directory"),
         )
         .subcommand(
+            SubCommand::with_name("cat")
+                .about("writes the contents of a journal entry to standard out"),
+        )
+        .subcommand(
             SubCommand::with_name("observe")
                 .about("adds a key/value observation to the journal")
                 .arg(
@@ -78,10 +82,6 @@ fn main() -> Result<(), Box<dyn Error>> {
                         .validator(no_newline_validator)
                         .index(2),
                 ),
-        )
-        .subcommand(
-            SubCommand::with_name("cat")
-                .about("writes the contents of a journal entry to standard out"),
         )
         .subcommand(
             SubCommand::with_name("task")
@@ -124,6 +124,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                         .index(1),
                 ),
         )
+        .subcommand(SubCommand::with_name("note").about("add a note to this entry"))
         .subcommand(SubCommand::with_name("edit").about("opens coach file with $EDTIOR"));
     let matches = app.clone().get_matches();
 
@@ -202,6 +203,24 @@ fn main() -> Result<(), Box<dyn Error>> {
                     }
                 }
             }
+        }
+        ("note", _) => {
+            let mut entry = files::entry_from_file(&filename, MAX_ENTRY_SIZE_BYTES)?;
+            let text = editor::edit_prompt()?;
+            let text = text.trim_matches('\n');
+            for body in text.split("\n\n") {
+                match entry::as_note(String::from(body)) {
+                    Some(n) => entry.notes.push(n),
+                    None => {
+                        return Err(Box::new(CommandError {
+                            desc: String::from(
+                                "notes must be nonempty and must not look like events or tasks",
+                            ),
+                        }))
+                    }
+                }
+            }
+            files::entry_to_file(&filename, &entry)?;
         }
         ("edit", _) => {
             editor::launch_editor(&filename)?;
