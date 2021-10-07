@@ -2,7 +2,6 @@ use clap::{App, Arg, SubCommand};
 use std::error::Error;
 use std::fmt;
 use std::fmt::Display;
-use std::time::SystemTime;
 use time::format_description::FormatItem;
 use time::macros::format_description;
 use time::OffsetDateTime;
@@ -186,8 +185,8 @@ to the current entry. You can separate notes by blank lines.",
         );
     let matches = app.clone().get_matches();
 
-    let moment = SystemTime::now();
-    let when: OffsetDateTime = moment.into();
+    let when: OffsetDateTime =
+        OffsetDateTime::now_local().unwrap_or_else(|_| OffsetDateTime::now_utc());
     let dt_formatted = when.format(&DATE_FORMAT)?;
     let dt_label = entry::as_no_newlines(dt_formatted).unwrap();
 

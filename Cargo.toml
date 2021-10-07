@@ -10,7 +10,7 @@ version = "0.1.0"
 arbitrary = {version = "1.0", features = ["derive"]}
 clap = "2.33"
 tempfile = "3.2"
-time = {version = "0.3.3", features = ["formatting", "macros", "parsing"]}
+time = {version = "0.3.3", features = ["formatting", "macros", "local-offset", "parsing", "std"]}
 
 [[bin]]
 name = "coach"
