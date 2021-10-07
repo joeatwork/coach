@@ -536,7 +536,7 @@ mod tests {
             notes: vec![],
         };
 
-        assert_eq!("coach1\nTest\n\n", e.to_string())
+        assert_eq!("#coach\nTest\n\n", e.to_string())
     }
 
     #[test]
@@ -558,7 +558,7 @@ mod tests {
             notes: vec![],
         };
 
-        assert_eq!("coach1\nTest\nkey: value1\nkey: value2\n\n", e.to_string())
+        assert_eq!("#coach\nTest\nkey: value1\nkey: value2\n\n", e.to_string())
     }
 
     #[test]
@@ -577,7 +577,7 @@ mod tests {
         };
 
         assert_eq!(
-            "coach1
+            "#coach
 Test
 
 TODO take a break
@@ -610,7 +610,7 @@ CANCELLED teach the dog rust
         };
 
         assert_eq!(
-            "coach1
+            "#coach
 Test
 
 * <2021-10-31 Sun 21:00> working in the lab late one night
@@ -637,7 +637,7 @@ Test
         };
 
         assert_eq!(
-            "coach1
+            "#coach
 Test
 
 dogs can't type
@@ -651,7 +651,7 @@ from her palm pilot
         )
     }
 
-    const MESSAGE: &str = "coach1
+    const MESSAGE: &str = "#coach
 Test
 key: value1
 key: value2
@@ -723,7 +723,7 @@ it is multiline
 
     #[test]
     fn test_parse_just_label() {
-        let e = parse("coach1\nLabel\n\n").unwrap();
+        let e = parse("#coach\nLabel\n\n").unwrap();
         let expect = Entry {
             label: NoNewlines(String::from("Label")),
             ..Entry::default()
@@ -737,12 +737,12 @@ it is multiline
             label: NoNewlines(String::from("Label")),
             ..Entry::default()
         };
-        assert_eq!("coach1\nLabel\n\n", e.to_string());
+        assert_eq!("#coach\nLabel\n\n", e.to_string());
     }
 
     #[test]
     fn test_parse_no_terminator() {
-        let s = "coach1\nLabel\n\nNo terminator";
+        let s = "#coach\nLabel\n\nNo terminator";
         let _ = parse(s).unwrap();
     }
 
