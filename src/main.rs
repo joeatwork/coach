@@ -64,6 +64,14 @@ line tool for managing coach files. You can use coach to keep track of a daily
 TODO list, keep a record of observations of key metrics, and keep daily 
 progress notes.",
         )
+        .arg(
+            Arg::with_name("filename")
+                .long("filename")
+                .short("f")
+                .takes_value(true)
+                .value_name("FILE NAME")
+                .help("filename of entry to use. If not provided, use a file named after the current date in the current working directory"),
+        )
         .subcommand(
             SubCommand::with_name("today")
                 .about("creates a new journal file in the current working directory")
@@ -189,8 +197,10 @@ to the current entry. You can separate notes by blank lines.",
         OffsetDateTime::now_local().unwrap_or_else(|_| OffsetDateTime::now_utc());
     let dt_formatted = when.format(&DATE_FORMAT)?;
     let dt_label = entry::as_no_newlines(dt_formatted).unwrap();
-
-    let filename = dt_label.to_string();
+    let filename = matches
+        .value_of("filename")
+        .map(|v| v.to_string())
+        .unwrap_or_else(|| dt_label.to_string());
 
     match matches.subcommand() {
         ("today", Some(_)) => {
@@ -202,7 +212,7 @@ to the current entry. You can separate notes by blank lines.",
             println!("{}", &filename);
         }
         ("cat", Some(_)) => {
-            let entry = files::entry_from_file(&dt_label.to_string(), MAX_ENTRY_SIZE_BYTES)?;
+            let entry = files::entry_from_file(&filename, MAX_ENTRY_SIZE_BYTES)?;
             print!("{}", entry);
         }
         ("observe", Some(args)) => match args.value_of("NAME") {
