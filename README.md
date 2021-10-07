@@ -32,7 +32,7 @@ $ coach task
 ## The coach file format
 
 Coach files are short, human readable daily journal files. You can create a new file for
-the day by running.
+the day by running
 
 ```console
 $ coach today
@@ -117,28 +117,32 @@ $ coach task new "put out Halloween lawn decorations"
 ```
 
 To review the tasks in the current entry, use `coach task`, which will
-print out a list of tasks along with an index number. You can then
-use the index numbers to change the state of your tasks. For example,
-once the decorations have been put out, you might type
+print out a list of tasks along with an index number.
 
 ```console
 $ coach task
 1: TODO write README
 2: TODO put out Halloween lawn decorations
 3: TODO buy candy for trick r treaters
+```
 
+You can then use the index numbers to change the state of your tasks. For example,
+once the decorations have been put out, you might type
+
+```console
 $ coach task done 2
+```
 
-$ # You can see the changes by running `coach task` again
+Having changed the state of task 2 from TODO to DONE, you will see the following if you run `coach task` again:
+
+```console
 $ coach task
 1: TODO write README
 2: DONE put out Halloween lawn decorations
 3: TODO
-
 ```
 
-You can record events in your journal entry with `coach event <MESSAGE>`. For
-example, you might write
+You can record events in your journal entry with `coach event <MESSAGE>`. For example, you might write
 
 ```console
 $ coach event 'bought candy at the drug store. Hope the kids like Oops-all-banana runts!'
