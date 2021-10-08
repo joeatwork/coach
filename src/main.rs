@@ -186,6 +186,13 @@ To make note of a new event, include a message as an argument, like this:
                 .long_about(
                     "note will open a text editor and allow you to add one or more notes,
 to the current entry. You can separate notes by blank lines.",
+                ).arg(
+                    Arg::with_name("message")
+                    .short("m")
+                    .long("message")
+                    .takes_value(true)
+                    .value_name("MESSAGE")
+                    .help("if provided, use the argument value for the note content rather than opening an editor")
                 ),
         )
         .subcommand(
@@ -279,9 +286,12 @@ to the current entry. You can separate notes by blank lines.",
                 }
             }
         }
-        ("note", _) => {
+        ("note", Some(args)) => {
             let mut entry = files::entry_from_file(&filename, MAX_ENTRY_SIZE_BYTES)?;
-            let text = editor::edit_prompt()?;
+            let text = match args.value_of("message") {
+                Some(msg) => String::from(msg),
+                None => editor::edit_prompt()?,
+            };
             let text = text.trim_matches('\n');
             for body in text.split("\n\n") {
                 match entry::as_note(String::from(body)) {
