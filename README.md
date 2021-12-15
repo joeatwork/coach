@@ -180,7 +180,9 @@ And run unit tests with
 $ cargo test
 ```
 
-coach also ships with some simple fuzz tests. To run the fuzz tests, use
+coach also ships with some simple fuzz tests, but at this writing they are broken in rust nightly.
+
+To try and run the fuzz tests, use
 
 ```sh
 $ cargo +nightly fuzz run parser

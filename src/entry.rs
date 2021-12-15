@@ -8,7 +8,7 @@ use time::{OffsetDateTime, PrimitiveDateTime, UtcOffset};
 
 // You should only construct a NoNewlines if you know for a fact
 // that the contained string has no newlines.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct NoNewlines(String);
 
 pub fn as_no_newlines(s: String) -> Option<NoNewlines> {
@@ -90,7 +90,7 @@ impl<'a> fmt::Display for Observation {
     }
 }
 
-#[derive(Arbitrary, Debug, PartialEq)]
+#[derive(Arbitrary, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Task {
     Todo(NoNewlines),
     Working(NoNewlines),

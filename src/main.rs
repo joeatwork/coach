@@ -340,6 +340,7 @@ fn new_task(filename: &str, message: entry::NoNewlines) -> Result<(), Box<dyn Er
     let task = entry::Task::Todo(message);
     println!("{}", &task);
     entry.tasks.push(task);
+    entry.tasks.sort();
 
     files::entry_to_file(filename, &entry)?;
 
@@ -368,6 +369,8 @@ where
     entry.update_task(ix, updater);
 
     println!("{}", entry.tasks[ix]);
+
+    entry.tasks.sort();
     files::entry_to_file(filename, &entry)?;
 
     Ok(())
