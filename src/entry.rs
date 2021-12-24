@@ -86,8 +86,8 @@ impl<'a> fmt::Display for Observation {
 
 #[derive(Arbitrary, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Task {
-    Todo(NoNewlines),
     Working(NoNewlines),
+    Todo(NoNewlines),
     Done(NoNewlines),
     Cancelled(NoNewlines),
 }
