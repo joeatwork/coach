@@ -1,17 +1,22 @@
 use std::env;
 use std::ffi::OsString;
-use std::fs::OpenOptions;
-use std::io;
-use std::io::Read;
+use std::fs::{File, OpenOptions};
+use std::io::{self, Read};
 use std::process::Command;
 use tempfile::NamedTempFile;
 
 // TODO might be nice to write a prompt to the file?
 pub fn edit_prompt() -> Result<String, io::Error> {
-    let (mut file, path) = NamedTempFile::new()?.into_parts();
+    let tf = NamedTempFile::new().unwrap();
+    let path = tf.into_temp_path();
     launch_editor(path.to_str().unwrap())?;
     let mut ret = String::new();
-    file.read_to_string(&mut ret)?;
+
+    // Can't use tf.reopen(), it (appears) that vi
+    // on my mac doesn't actually edit the file, just
+    // copies and renames.
+    let mut inf = File::open(path)?;
+    inf.read_to_string(&mut ret)?;
     Ok(ret)
 }
 
