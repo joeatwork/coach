@@ -8,7 +8,7 @@ use time::{OffsetDateTime, PrimitiveDateTime, UtcOffset};
 
 // You should only construct a NoNewlines if you know for a fact
 // that the contained string has no newlines.
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub struct NoNewlines(String);
 
 pub fn as_no_newlines(s: String) -> Option<NoNewlines> {
@@ -16,12 +16,6 @@ pub fn as_no_newlines(s: String) -> Option<NoNewlines> {
         None
     } else {
         Some(NoNewlines(s))
-    }
-}
-
-impl Default for NoNewlines {
-    fn default() -> NoNewlines {
-        NoNewlines(String::new())
     }
 }
 
