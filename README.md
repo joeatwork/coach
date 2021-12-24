@@ -24,8 +24,8 @@ $ coach task done 2
 # now you can see your changes in your to-do list
 $ coach task
 1: TODO implement notes with editor popup
-2: DONE clean up README
-3: TODO write good --help messages for commands
+2: TODO write good --help messages for commands
+3: DONE clean up README
 
 ```
 
