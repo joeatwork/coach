@@ -4,7 +4,7 @@ use std::fmt;
 use std::fmt::Display;
 use time::format_description::FormatItem;
 use time::macros::format_description;
-use time::OffsetDateTime;
+use time::{Duration, OffsetDateTime};
 
 use coach::editor;
 use coach::entry;
@@ -70,7 +70,10 @@ progress notes.",
                 .short("f")
                 .takes_value(true)
                 .value_name("FILE NAME")
-                .help("filename of entry to use. If not provided, use a file named after the current date in the current working directory"),
+                .help("filename of entry to use. If not provided, use a file named after the current UTC date in the current working directory"),
+        )
+        .arg(
+            Arg::with_name("yesterday").long("yesterday").takes_value(false).conflicts_with("filename").help("use the entry named by the previous day, in UTC"),
         )
         .subcommand(
             SubCommand::with_name("today")
@@ -204,15 +207,25 @@ to the current entry. You can separate notes by blank lines.",
         OffsetDateTime::now_local().unwrap_or_else(|_| OffsetDateTime::now_utc());
     let dt_formatted = when.format(&DATE_FORMAT)?;
     let dt_label = entry::as_no_newlines(dt_formatted).unwrap();
+    let day = Duration::new(/* seconds = */ 60 * 60 * 24, 0);
+    let yesterday = when.checked_sub(day).unwrap();
+
     let filename = matches
         .value_of("filename")
         .map(|v| v.to_string())
-        .unwrap_or_else(|| dt_label.to_string());
+        .unwrap_or_else(|| {
+            if matches.is_present("yesterday") {
+                let daystr = yesterday.format(&DATE_FORMAT).unwrap();
+                entry::as_no_newlines(daystr).unwrap().to_string()
+            } else {
+                dt_label.to_string()
+            }
+        });
 
     match matches.subcommand() {
         ("today", Some(_)) => {
             let entry = entry::Entry {
-                label: dt_label,
+                label: entry::as_no_newlines(filename.clone()).unwrap(),
                 ..entry::Entry::default()
             };
             files::new_entry_file(&filename, &entry)?;
