@@ -266,7 +266,8 @@ to the current entry. You can separate notes by blank lines.",
             files::new_entry_file(&tofile, &new)?;
             files::entry_to_file(&fromfile, &old)?;
 
-            println!("{} -> {} ({} migrated)", fromfile, tofile, new.tasks.len()); 
+            println!("from {} ({} migrated)", fromfile, new.tasks.len()); 
+            println!("{}", &new);
         }
         ("cat", Some(_)) => {
             let entry = files::entry_from_file(&fromfile, MAX_ENTRY_SIZE_BYTES)?;
