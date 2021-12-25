@@ -103,6 +103,13 @@ current working directory. The rest of the `coach` commands assume that
 a file using this naming format (and named for the current system date)
 exists.
 
+If you have a file from the previous day with unfinished tasks you'd like
+to move into your new entry, you can use
+
+```console
+$ coach today --from_yesterday
+```
+
 To add observations, use `coach observe <key> <value>`. For example, you
 could record the current weather with something like
 

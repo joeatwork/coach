@@ -85,7 +85,7 @@ named after the current date. Other commands will write to or edit that file.",
                 ).arg(
                 Arg::with_name("from_file")
                 .long("from_file")
-                .short("f")
+                .short("r")
                 .takes_value(true)
                 .value_name("FILENAME")
                 .help("migrate TODO and WORKING tasks from FILENAME")
