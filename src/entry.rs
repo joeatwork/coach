@@ -93,6 +93,13 @@ pub enum Task {
 }
 
 impl Task {
+    pub fn is_incomplete(&self) -> bool {
+        match self {
+            Task::Todo(_) | Task::Working(_) => true,
+            _ => false,
+        }
+    }
+
     pub fn message(&mut self) -> &mut NoNewlines {
         match self {
             Task::Todo(s) => s,

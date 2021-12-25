@@ -49,6 +49,7 @@ pub fn read_bounded_str_from_file<'a>(
     Ok(text)
 }
 
+// will fail if filename already exists
 pub fn new_entry_file(filename: &str, entry: &entry::Entry) -> Result<(), io::Error> {
     let mut out = OpenOptions::new()
         .write(true)
@@ -74,7 +75,9 @@ pub fn entry_to_file(filename: &str, entry: &entry::Entry) -> Result<(), io::Err
     let mut newfile = OpenOptions::new()
         .write(true)
         .create_new(false)
+        .truncate(true)
         .open(&filename)?;
+
     newfile.write_all(entry.to_string().as_bytes())?;
     newfile.sync_all()?;
 

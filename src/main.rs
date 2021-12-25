@@ -65,15 +65,15 @@ TODO list, keep a record of observations of key metrics, and keep daily
 progress notes.",
         )
         .arg(
-            Arg::with_name("filename")
-                .long("filename")
+            Arg::with_name("entry")
+                .long("entry")
                 .short("f")
                 .takes_value(true)
-                .value_name("FILE NAME")
+                .value_name("FILENAME")
                 .help("filename of entry to use. If not provided, use a file named after the current UTC date in the current working directory"),
         )
         .arg(
-            Arg::with_name("yesterday").long("yesterday").takes_value(false).conflicts_with("filename").help("use the entry named by the previous day, in UTC"),
+            Arg::with_name("yesterday").long("yesterday").takes_value(false).conflicts_with("entry").help("use the entry named by the previous day, in UTC"),
         )
         .subcommand(
             SubCommand::with_name("today")
@@ -81,7 +81,21 @@ progress notes.",
                 .long_about(
                     "today will create a new daily entry file in the current working directory,
 named after the current date. Other commands will write to or edit that file.",
-                ),
+                ).arg(
+                Arg::with_name("from_file")
+                .long("from_file")
+                .short("r")
+                .takes_value(true)
+                .value_name("FILENAME")
+                .help("migrate TODO and WORKING tasks from FILENAME")
+            ).arg(
+                Arg::with_name("from_yesterday")
+                .long("from_yesterday")
+                .short("m")
+                .takes_value(false)
+                .conflicts_with("from_file")
+                .help("migrate TODO and WORKING tasks from a file named after yesterday UTC in the current directory")
+            )
         )
         .subcommand(
             SubCommand::with_name("cat")
@@ -199,7 +213,7 @@ to the current entry. You can separate notes by blank lines.",
                 ),
         )
         .subcommand(
-            SubCommand::with_name("edit").about("opens the current coach entry with a text editor"),
+            SubCommand::with_name("edit").about("opens the current coach entry with a text editor. This could corrupt your file, so be careful!"),
         );
     let matches = app.clone().get_matches();
 
@@ -209,30 +223,34 @@ to the current entry. You can separate notes by blank lines.",
     let dt_label = entry::as_no_newlines(dt_formatted).unwrap();
     let day = Duration::new(/* seconds = */ 60 * 60 * 24, 0);
     let yesterday = when.checked_sub(day).unwrap();
+    let yesterday_formatted = yesterday.format(&DATE_FORMAT).unwrap();
+    let yesterday_label = entry::as_no_newlines(yesterday_formatted).unwrap();
 
-    let filename = matches
-        .value_of("filename")
+    let entryname = matches
+        .value_of("entry")
         .map(|v| v.to_string())
         .unwrap_or_else(|| {
             if matches.is_present("yesterday") {
-                let daystr = yesterday.format(&DATE_FORMAT).unwrap();
-                entry::as_no_newlines(daystr).unwrap().to_string()
+                yesterday_label.to_string()
             } else {
                 dt_label.to_string()
             }
         });
 
     match matches.subcommand() {
-        ("today", Some(_)) => {
-            let entry = entry::Entry {
-                label: entry::as_no_newlines(filename.clone()).unwrap(),
-                ..entry::Entry::default()
-            };
-            files::new_entry_file(&filename, &entry)?;
-            println!("{}", &filename);
+        ("today", Some(args)) => {
+            let source = args.value_of("from_file").map(|v| v.to_string()).or_else(|| {
+                if args.is_present("from_yesterday") {
+                    Some(yesterday_label.to_string())
+                } else {
+                    None
+                }
+            });
+
+            migrate(source, &entryname)?;
         }
         ("cat", Some(_)) => {
-            let entry = files::entry_from_file(&filename, MAX_ENTRY_SIZE_BYTES)?;
+            let entry = files::entry_from_file(&entryname, MAX_ENTRY_SIZE_BYTES)?;
             print!("{}", entry);
         }
         ("observe", Some(args)) => match args.value_of("NAME") {
@@ -240,10 +258,10 @@ to the current entry. You can separate notes by blank lines.",
                 let value_str = args.value_of("VALUE").unwrap();
                 let name = entry::as_observation_name(name_str.to_string()).unwrap();
                 let value = entry::as_no_newlines(value_str.to_string()).unwrap();
-                observe(&filename, name, value)?;
+                observe(&entryname, name, value)?;
             }
             None => {
-                let entry = files::entry_from_file(&filename, MAX_ENTRY_SIZE_BYTES)?;
+                let entry = files::entry_from_file(&entryname, MAX_ENTRY_SIZE_BYTES)?;
                 for ob in entry.observations {
                     println!("{}", ob);
                 }
@@ -253,44 +271,44 @@ to the current entry. You can separate notes by blank lines.",
             ("new", Some(args)) => {
                 let message = args.value_of("MESSAGE").unwrap();
                 let message = entry::as_no_newlines(message.to_string()).unwrap();
-                new_task(&filename, message)?;
+                new_task(&entryname, message)?;
             }
             ("todo", Some(args)) => {
                 let ix_arg = args.value_of("INDEX").unwrap();
                 let ix_arg: usize = ix_arg.parse()?;
-                update_task(&filename, ix_arg, entry::Task::Todo)?;
+                update_task(&entryname, ix_arg, entry::Task::Todo)?;
             }
             ("done", Some(args)) => {
                 let ix_arg = args.value_of("INDEX").unwrap();
                 let ix_arg: usize = ix_arg.parse()?;
-                update_task(&filename, ix_arg, entry::Task::Done)?;
+                update_task(&entryname, ix_arg, entry::Task::Done)?;
             }
             ("cancel", Some(args)) => {
                 let ix_arg = args.value_of("INDEX").unwrap();
                 let ix_arg: usize = ix_arg.parse()?;
-                update_task(&filename, ix_arg, entry::Task::Cancelled)?;
+                update_task(&entryname, ix_arg, entry::Task::Cancelled)?;
             }
             ("working", Some(args)) => {
                 let ix_arg = args.value_of("INDEX").unwrap();
                 let ix_arg: usize = ix_arg.parse()?;
-                update_task(&filename, ix_arg, entry::Task::Working)?;
+                update_task(&entryname, ix_arg, entry::Task::Working)?;
             }
             _ => {
-                let entry = files::entry_from_file(&filename, MAX_ENTRY_SIZE_BYTES)?;
+                let entry = files::entry_from_file(&entryname, MAX_ENTRY_SIZE_BYTES)?;
                 for (ix, t) in entry.tasks.iter().enumerate() {
                     println!("{}: {}", ix + 1, t)
                 }
             }
         },
         ("event", Some(args)) => {
-            let mut entry = files::entry_from_file(&filename, MAX_ENTRY_SIZE_BYTES)?;
+            let mut entry = files::entry_from_file(&entryname, MAX_ENTRY_SIZE_BYTES)?;
             match args.value_of("MESSAGE") {
                 Some(msg) => {
                     let text = entry::as_no_newlines(msg.to_string()).unwrap();
                     let event = entry::Event { when, text };
                     println!("{}", event);
                     entry.events.push(event);
-                    files::entry_to_file(&filename, &entry)?;
+                    files::entry_to_file(&entryname, &entry)?;
                 }
                 None => {
                     for e in entry.events {
@@ -300,7 +318,7 @@ to the current entry. You can separate notes by blank lines.",
             }
         }
         ("note", Some(args)) => {
-            let mut entry = files::entry_from_file(&filename, MAX_ENTRY_SIZE_BYTES)?;
+            let mut entry = files::entry_from_file(&entryname, MAX_ENTRY_SIZE_BYTES)?;
             let text = match args.value_of("message") {
                 Some(msg) => String::from(msg),
                 None => editor::edit_prompt()?,
@@ -318,17 +336,44 @@ to the current entry. You can separate notes by blank lines.",
                     }
                 }
             }
-            files::entry_to_file(&filename, &entry)?;
+            files::entry_to_file(&entryname, &entry)?;
         }
         ("edit", _) => {
-            // TODO this is an easy way to corrupt your entry.
-            editor::launch_editor(&filename)?;
+            editor::launch_editor(&entryname)?;
         }
         _ => {
             let _ = app.print_long_help();
             println!();
         }
     };
+
+    Ok(())
+}
+
+fn migrate(source: Option<String>, toname: &str) -> Result<(), Box<dyn Error>> {
+    let mut new = entry::Entry {
+        label: entry::as_no_newlines(String::from(toname)).unwrap(),
+        ..entry::Entry::default()
+    };
+
+    if let Some(fromname) = source {
+        let mut old = files::entry_from_file(&fromname, MAX_ENTRY_SIZE_BYTES)?;
+        let (live, dead): (Vec<entry::Task>, Vec<entry::Task>) =
+            old.tasks.drain(..).partition(|t| t.is_incomplete());
+
+        old.tasks.extend(dead);
+        new.tasks.extend(live);
+
+        files::new_entry_file(&toname, &new)?;
+        files::entry_to_file(&fromname, &old)?;
+
+        println!("from {} ({} migrated)", fromname, new.tasks.len());
+        for task in new.tasks {
+            println!("{}", &task);
+        }
+    } else {
+        files::new_entry_file(&toname, &new)?;
+    }
 
     Ok(())
 }
