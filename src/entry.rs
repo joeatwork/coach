@@ -93,7 +93,7 @@ pub enum Task {
 }
 
 impl Task {
-    pub fn is_live(&self) -> bool {
+    pub fn is_incomplete(&self) -> bool {
         match self {
             Task::Todo(_) | Task::Working(_) => true,
             _ => false,

@@ -76,7 +76,6 @@ progress notes.",
             Arg::with_name("yesterday").long("yesterday").takes_value(false).conflicts_with("entry").help("use the entry named by the previous day, in UTC"),
         )
         .subcommand(
-            // TODO rename
             SubCommand::with_name("today")
                 .about("creates a new journal file in the current working directory")
                 .long_about(
@@ -360,7 +359,7 @@ fn migrate(source: Option<String>, toname: &str) -> Result<(), Box<dyn Error>> {
     if let Some(fromname) = source {
         let mut old = files::entry_from_file(&fromname, MAX_ENTRY_SIZE_BYTES)?;
         let (live, dead): (Vec<entry::Task>, Vec<entry::Task>) =
-            old.tasks.drain(..).partition(|t| t.is_live());
+            old.tasks.drain(..).partition(|t| t.is_incomplete());
 
         old.tasks.extend(dead);
         new.tasks.extend(live);
