@@ -65,15 +65,15 @@ TODO list, keep a record of observations of key metrics, and keep daily
 progress notes.",
         )
         .arg(
-            Arg::with_name("fromfile")
-                .long("fromfile")
+            Arg::with_name("entry")
+                .long("entry")
                 .short("f")
                 .takes_value(true)
-                .value_name("FROM FILE")
+                .value_name("FILENAME")
                 .help("filename of entry to use. If not provided, use a file named after the current UTC date in the current working directory"),
         )
         .arg(
-            Arg::with_name("yesterday").long("yesterday").takes_value(false).conflicts_with("fromfile").help("use the entry named by the previous day, in UTC"),
+            Arg::with_name("yesterday").long("yesterday").takes_value(false).conflicts_with("entry").help("use the entry named by the previous day, in UTC"),
         )
         .subcommand(
             // TODO rename
@@ -88,12 +88,12 @@ named after the current date. Other commands will write to or edit that file.",
             SubCommand::with_name("migrate")
             .about("move TODO and WORKING tasks into a new file.")
             .arg(
-                Arg::with_name("tofile")
-                .long("tofile")
-                .short("t")
+                Arg::with_name("from")
+                .long("from")
+                .short("f")
                 .takes_value(true)
-                .value_name("TO FILE")
-                .help("filename to migrate toward. This file will be created with migrated tasks")
+                .value_name("FILENAME")
+                .help("filename to migrate from. Defaults to a file named for the previous UTC date in the current working directory")
             )
         )
         .subcommand(
@@ -212,7 +212,7 @@ to the current entry. You can separate notes by blank lines.",
                 ),
         )
         .subcommand(
-            SubCommand::with_name("edit").about("opens the current coach entry with a text editor.\nThis could corrupt your file, so be careful!"),
+            SubCommand::with_name("edit").about("opens the current coach entry with a text editor. This could corrupt your file, so be careful!"),
         );
     let matches = app.clone().get_matches();
 
@@ -225,8 +225,8 @@ to the current entry. You can separate notes by blank lines.",
     let yesterday_formatted = yesterday.format(&DATE_FORMAT).unwrap();
     let yesterday_label = entry::as_no_newlines(yesterday_formatted).unwrap();
 
-    let fromfile = matches
-        .value_of("fromfile")
+    let entryname = matches
+        .value_of("entry")
         .map(|v| v.to_string())
         .unwrap_or_else(|| {
             if matches.is_present("yesterday") {
@@ -239,38 +239,22 @@ to the current entry. You can separate notes by blank lines.",
     match matches.subcommand() {
         ("today", Some(_)) => {
             let entry = entry::Entry {
-                label: entry::as_no_newlines(fromfile.clone()).unwrap(),
+                label: entry::as_no_newlines(entryname.clone()).unwrap(),
                 ..entry::Entry::default()
             };
-            files::new_entry_file(&fromfile, &entry)?;
-            println!("{}", &fromfile);
+            files::new_entry_file(&entryname, &entry)?;
+            println!("{}", &entryname);
         }
         ("migrate", Some(args)) => {
-            // TODO: defaults for fromdfile and tofile don't quite make sense
-            // The arguments are backwards - globally we should have TOFILE/WRITEFILE
-            // and "migrate" should have FROMFILE/READFILE
-            let mut old = files::entry_from_file(&fromfile, MAX_ENTRY_SIZE_BYTES)?;
-            let tofile = args.value_of("tofile")
-            .map(|v| v.to_string())
-            .unwrap_or_else(|| yesterday_label.to_string());
+            let fromname = args
+                .value_of("from")
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| yesterday_label.to_string());
 
-            let mut new = entry::Entry {
-                label: entry::as_no_newlines(tofile.clone()).unwrap(),
-                ..entry::Entry::default()
-            };
- 
-            let (live, dead): (Vec<entry::Task>, Vec<entry::Task>) = old.tasks.drain(..).partition(|t| t.is_live());
-            old.tasks.extend(dead);
-            new.tasks.extend(live);
-
-            files::new_entry_file(&tofile, &new)?;
-            files::entry_to_file(&fromfile, &old)?;
-
-            println!("from {} ({} migrated)", fromfile, new.tasks.len()); 
-            println!("{}", &new);
+            migrate(&fromname, &entryname)?;
         }
         ("cat", Some(_)) => {
-            let entry = files::entry_from_file(&fromfile, MAX_ENTRY_SIZE_BYTES)?;
+            let entry = files::entry_from_file(&entryname, MAX_ENTRY_SIZE_BYTES)?;
             print!("{}", entry);
         }
         ("observe", Some(args)) => match args.value_of("NAME") {
@@ -278,10 +262,10 @@ to the current entry. You can separate notes by blank lines.",
                 let value_str = args.value_of("VALUE").unwrap();
                 let name = entry::as_observation_name(name_str.to_string()).unwrap();
                 let value = entry::as_no_newlines(value_str.to_string()).unwrap();
-                observe(&fromfile, name, value)?;
+                observe(&entryname, name, value)?;
             }
             None => {
-                let entry = files::entry_from_file(&fromfile, MAX_ENTRY_SIZE_BYTES)?;
+                let entry = files::entry_from_file(&entryname, MAX_ENTRY_SIZE_BYTES)?;
                 for ob in entry.observations {
                     println!("{}", ob);
                 }
@@ -291,44 +275,44 @@ to the current entry. You can separate notes by blank lines.",
             ("new", Some(args)) => {
                 let message = args.value_of("MESSAGE").unwrap();
                 let message = entry::as_no_newlines(message.to_string()).unwrap();
-                new_task(&fromfile, message)?;
+                new_task(&entryname, message)?;
             }
             ("todo", Some(args)) => {
                 let ix_arg = args.value_of("INDEX").unwrap();
                 let ix_arg: usize = ix_arg.parse()?;
-                update_task(&fromfile, ix_arg, entry::Task::Todo)?;
+                update_task(&entryname, ix_arg, entry::Task::Todo)?;
             }
             ("done", Some(args)) => {
                 let ix_arg = args.value_of("INDEX").unwrap();
                 let ix_arg: usize = ix_arg.parse()?;
-                update_task(&fromfile, ix_arg, entry::Task::Done)?;
+                update_task(&entryname, ix_arg, entry::Task::Done)?;
             }
             ("cancel", Some(args)) => {
                 let ix_arg = args.value_of("INDEX").unwrap();
                 let ix_arg: usize = ix_arg.parse()?;
-                update_task(&fromfile, ix_arg, entry::Task::Cancelled)?;
+                update_task(&entryname, ix_arg, entry::Task::Cancelled)?;
             }
             ("working", Some(args)) => {
                 let ix_arg = args.value_of("INDEX").unwrap();
                 let ix_arg: usize = ix_arg.parse()?;
-                update_task(&fromfile, ix_arg, entry::Task::Working)?;
+                update_task(&entryname, ix_arg, entry::Task::Working)?;
             }
             _ => {
-                let entry = files::entry_from_file(&fromfile, MAX_ENTRY_SIZE_BYTES)?;
+                let entry = files::entry_from_file(&entryname, MAX_ENTRY_SIZE_BYTES)?;
                 for (ix, t) in entry.tasks.iter().enumerate() {
                     println!("{}: {}", ix + 1, t)
                 }
             }
         },
         ("event", Some(args)) => {
-            let mut entry = files::entry_from_file(&fromfile, MAX_ENTRY_SIZE_BYTES)?;
+            let mut entry = files::entry_from_file(&entryname, MAX_ENTRY_SIZE_BYTES)?;
             match args.value_of("MESSAGE") {
                 Some(msg) => {
                     let text = entry::as_no_newlines(msg.to_string()).unwrap();
                     let event = entry::Event { when, text };
                     println!("{}", event);
                     entry.events.push(event);
-                    files::entry_to_file(&fromfile, &entry)?;
+                    files::entry_to_file(&entryname, &entry)?;
                 }
                 None => {
                     for e in entry.events {
@@ -338,7 +322,7 @@ to the current entry. You can separate notes by blank lines.",
             }
         }
         ("note", Some(args)) => {
-            let mut entry = files::entry_from_file(&fromfile, MAX_ENTRY_SIZE_BYTES)?;
+            let mut entry = files::entry_from_file(&entryname, MAX_ENTRY_SIZE_BYTES)?;
             let text = match args.value_of("message") {
                 Some(msg) => String::from(msg),
                 None => editor::edit_prompt()?,
@@ -356,17 +340,40 @@ to the current entry. You can separate notes by blank lines.",
                     }
                 }
             }
-            files::entry_to_file(&fromfile, &entry)?;
+            files::entry_to_file(&entryname, &entry)?;
         }
         ("edit", _) => {
             // TODO this is an easy way to corrupt your entry.
-            editor::launch_editor(&fromfile)?;
+            editor::launch_editor(&entryname)?;
         }
         _ => {
             let _ = app.print_long_help();
             println!();
         }
     };
+
+    Ok(())
+}
+
+fn migrate(fromname: &str, toname: &str) -> Result<(), Box<dyn Error>> {
+    let mut old = files::entry_from_file(&fromname, MAX_ENTRY_SIZE_BYTES)?;
+    let mut new = entry::Entry {
+        label: entry::as_no_newlines(String::from(toname)).unwrap(),
+        ..entry::Entry::default()
+    };
+
+    let (live, dead): (Vec<entry::Task>, Vec<entry::Task>) =
+        old.tasks.drain(..).partition(|t| t.is_live());
+    old.tasks.extend(dead);
+    new.tasks.extend(live);
+
+    files::new_entry_file(&toname, &new)?;
+    files::entry_to_file(&fromname, &old)?;
+
+    println!("from {} ({} migrated)", fromname, new.tasks.len());
+    for task in new.tasks {
+        println!("{}", &task);
+    }
 
     Ok(())
 }
