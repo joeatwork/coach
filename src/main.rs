@@ -76,16 +76,17 @@ progress notes.",
             Arg::with_name("yesterday").long("yesterday").takes_value(false).conflicts_with("entry").help("use the entry named by the previous day, in UTC"),
         )
         .subcommand(
-            SubCommand::with_name("create")
-                .about("creates a new, empty journal file in the current working directory")
+            // TODO rename
+            SubCommand::with_name("today")
+                .about("creates a new journal file in the current working directory")
                 .long_about(
-                    "create will create a new daily entry file, by default named after the current date. Other commands will write to or edit that file.",
+                    "today will create a new daily entry file in the current working directory,
+named after the current date. Other commands will write to or edit that file.",
                 ),
         )
         .subcommand(
             SubCommand::with_name("migrate")
             .about("move TODO and WORKING tasks into a new file.")
-            .long_about("migrate will create a new daily entry file, and transfer incomplete tasks from the previous entry file")
             .arg(
                 Arg::with_name("from")
                 .long("from")
@@ -236,7 +237,7 @@ to the current entry. You can separate notes by blank lines.",
         });
 
     match matches.subcommand() {
-        ("create", Some(_)) => {
+        ("today", Some(_)) => {
             let entry = entry::Entry {
                 label: entry::as_no_newlines(entryname.clone()).unwrap(),
                 ..entry::Entry::default()

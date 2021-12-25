@@ -5,8 +5,8 @@
 ## Quick start
 
 ```console
-# every morning before work, create a new journal entry with 'coach create'
-$ coach create
+# every morning before work, create a new journal entry with 'coach today'
+$ coach today
 2021-10-06
 
 # As you plan for new tasks throughout your day, you can add them to your TODO list
@@ -35,7 +35,7 @@ Coach files are short, human readable daily journal files. You can create a new 
 the day by running
 
 ```console
-$ coach create
+$ coach today
 ```
 
 Coach files contain the following information:
@@ -95,10 +95,10 @@ observations, tasks, events, and notes.
 To create a new entry, run
 
 ```console
-$ coach create
+$ coach today
 ```
 
-`coach create` will create a file named after the current date in your
+`coach today` will create a file named after the current date in your
 current working directory. The rest of the `coach` commands assume that
 a file using this naming format (and named for the current system date)
 exists.
