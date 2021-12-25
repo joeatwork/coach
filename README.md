@@ -187,9 +187,9 @@ And run unit tests with
 $ cargo test
 ```
 
-coach also ships with some simple fuzz tests, but at this writing they are broken in rust nightly.
-
-To try and run the fuzz tests, use
+coach also ships with some simple fuzz tests. They require
+the nightly toolchain and as such don't run reliably, but
+if your toolchain is working you can run them with:
 
 ```sh
 $ cargo +nightly fuzz run parser
