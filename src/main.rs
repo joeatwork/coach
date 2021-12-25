@@ -82,18 +82,20 @@ progress notes.",
                 .long_about(
                     "today will create a new daily entry file in the current working directory,
 named after the current date. Other commands will write to or edit that file.",
-                ),
-        )
-        .subcommand(
-            SubCommand::with_name("migrate")
-            .about("move TODO and WORKING tasks into a new file.")
-            .arg(
-                Arg::with_name("from")
-                .long("from")
+                ).arg(
+                Arg::with_name("from_file")
+                .long("from_file")
                 .short("f")
                 .takes_value(true)
                 .value_name("FILENAME")
-                .help("filename to migrate from. Defaults to a file named for the previous UTC date in the current working directory")
+                .help("migrate TODO and WORKING tasks from FILENAME")
+            ).arg(
+                Arg::with_name("from_yesterday")
+                .long("from_yesterday")
+                .short("m")
+                .takes_value(false)
+                .conflicts_with("from_file")
+                .help("migrate TODO and WORKING tasks from a file named after yesterday UTC in the current directory")
             )
         )
         .subcommand(
@@ -237,21 +239,16 @@ to the current entry. You can separate notes by blank lines.",
         });
 
     match matches.subcommand() {
-        ("today", Some(_)) => {
-            let entry = entry::Entry {
-                label: entry::as_no_newlines(entryname.clone()).unwrap(),
-                ..entry::Entry::default()
-            };
-            files::new_entry_file(&entryname, &entry)?;
-            println!("{}", &entryname);
-        }
-        ("migrate", Some(args)) => {
-            let fromname = args
-                .value_of("from")
-                .map(|v| v.to_string())
-                .unwrap_or_else(|| yesterday_label.to_string());
+        ("today", Some(args)) => {
+            let source = args.value_of("from_file").map(|v| v.to_string()).or_else(|| {
+                if args.is_present("from_yesterday") {
+                    Some(yesterday_label.to_string())
+                } else {
+                    None
+                }
+            });
 
-            migrate(&fromname, &entryname)?;
+            migrate(source, &entryname)?;
         }
         ("cat", Some(_)) => {
             let entry = files::entry_from_file(&entryname, MAX_ENTRY_SIZE_BYTES)?;
@@ -343,7 +340,6 @@ to the current entry. You can separate notes by blank lines.",
             files::entry_to_file(&entryname, &entry)?;
         }
         ("edit", _) => {
-            // TODO this is an easy way to corrupt your entry.
             editor::launch_editor(&entryname)?;
         }
         _ => {
@@ -355,24 +351,29 @@ to the current entry. You can separate notes by blank lines.",
     Ok(())
 }
 
-fn migrate(fromname: &str, toname: &str) -> Result<(), Box<dyn Error>> {
-    let mut old = files::entry_from_file(&fromname, MAX_ENTRY_SIZE_BYTES)?;
+fn migrate(source: Option<String>, toname: &str) -> Result<(), Box<dyn Error>> {
     let mut new = entry::Entry {
         label: entry::as_no_newlines(String::from(toname)).unwrap(),
         ..entry::Entry::default()
     };
 
-    let (live, dead): (Vec<entry::Task>, Vec<entry::Task>) =
-        old.tasks.drain(..).partition(|t| t.is_live());
-    old.tasks.extend(dead);
-    new.tasks.extend(live);
+    if let Some(fromname) = source {
+        let mut old = files::entry_from_file(&fromname, MAX_ENTRY_SIZE_BYTES)?;
+        let (live, dead): (Vec<entry::Task>, Vec<entry::Task>) =
+            old.tasks.drain(..).partition(|t| t.is_live());
 
-    files::new_entry_file(&toname, &new)?;
-    files::entry_to_file(&fromname, &old)?;
+        old.tasks.extend(dead);
+        new.tasks.extend(live);
 
-    println!("from {} ({} migrated)", fromname, new.tasks.len());
-    for task in new.tasks {
-        println!("{}", &task);
+        files::new_entry_file(&toname, &new)?;
+        files::entry_to_file(&fromname, &old)?;
+
+        println!("from {} ({} migrated)", fromname, new.tasks.len());
+        for task in new.tasks {
+            println!("{}", &task);
+        }
+    } else {
+        files::new_entry_file(&toname, &new)?;
     }
 
     Ok(())
