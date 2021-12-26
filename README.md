@@ -101,7 +101,12 @@ $ coach today
 `coach today` will create a file named after the current date in your
 current working directory. The rest of the `coach` commands assume that
 a file using this naming format (and named for the current system date)
-exists.
+exists. "Current date" here means the current date UTC, so (for example)
+in Los Angeles, CA, the current day turns over at 4PM or 5PM, depending
+on the season.
+
+To operate on the previous day, you can use the command line flag
+`--yesterday` to any operation.
 
 If you have a file from the previous day with unfinished tasks you'd like
 to move into your new entry, you can use
