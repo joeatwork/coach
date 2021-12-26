@@ -7,7 +7,6 @@ set -e
 
 cargo test
 
-# this doesn't run fuzzers, but does make sure
-# that we haven't broken them
-# Looks like +nightly has broken these for us :(
-# cargo +nightly fuzz build
+# It looks like fuzzers occasionally break in nightly,
+# which means maybe you should remove this line?
+cargo +nightly fuzz build
