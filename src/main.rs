@@ -305,7 +305,7 @@ to the current entry. You can separate notes by blank lines.",
             match args.value_of("MESSAGE") {
                 Some(msg) => {
                     let text = entry::as_no_newlines(msg.to_string()).unwrap();
-                    let event = entry::Event { when, text };
+                    let event = entry::Event::Moment { when, text };
                     println!("{}", event);
                     entry.events.push(event);
                     files::entry_to_file(&entryname, &entry)?;

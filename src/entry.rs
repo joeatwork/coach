@@ -122,9 +122,16 @@ impl<'a> fmt::Display for Task {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct Event {
-    pub when: OffsetDateTime,
-    pub text: NoNewlines,
+pub enum Event {
+    Moment {
+        when: OffsetDateTime,
+        text: NoNewlines,
+    },
+    Interval {
+        begin: OffsetDateTime,
+        end: OffsetDateTime,
+        text: NoNewlines,
+    },
 }
 
 const TIMESTAMP_FORMAT: &[FormatItem<'static>] = format_description!(
@@ -133,17 +140,32 @@ const TIMESTAMP_FORMAT: &[FormatItem<'static>] = format_description!(
 
 impl<'a> fmt::Display for Event {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let stamp = self.when.format(&TIMESTAMP_FORMAT).unwrap();
-        write!(f, "<{}> {}", stamp, self.text)
+        match self {
+            Event::Moment { when, text } => {
+                let stamp = when.format(&TIMESTAMP_FORMAT).unwrap();
+                write!(f, "<{}> {}", stamp, text)
+            }
+            Event::Interval { begin, end, text } => {
+                let begin_stamp = begin.format(&TIMESTAMP_FORMAT).unwrap();
+                let end_stamp = end.format(&TIMESTAMP_FORMAT).unwrap();
+                write!(f, "<{}>--<{}> {}", begin_stamp, end_stamp, text)
+            }
+        }
     }
 }
 
 impl<'a> Arbitrary<'a> for Event {
     fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
         let text = u.arbitrary::<NoNewlines>()?;
-        let when_stamp = u.int_in_range::<i64>(0..=2147483640)?;
-        let when = OffsetDateTime::from_unix_timestamp(when_stamp).unwrap(); // when_stamp is not out of range
-        Ok(Event { text, when })
+        let begin_stamp = u.int_in_range::<i64>(0..=2147483640)?;
+        let end_stamp = u.int_in_range(begin_stamp..=2147483640)?;
+        let begin = OffsetDateTime::from_unix_timestamp(begin_stamp).unwrap();
+        let end = OffsetDateTime::from_unix_timestamp(end_stamp).unwrap();
+        if u.arbitrary()? {
+            Ok(Event::Moment { text, when: begin })
+        } else {
+            Ok(Event::Interval { text, begin, end })
+        }
     }
 }
 
@@ -453,7 +475,7 @@ fn consume_task(remaining: &str) -> ConsumeResult<'_, Task> {
 }
 
 fn consume_event(remaining: &str) -> ConsumeResult<'_, Event> {
-    let (line_end, rest) = match remaining.find('\n') {
+    let (line_end, after_line) = match remaining.find('\n') {
         Some(ix) => (ix, &remaining[ix + 1..]),
         None => (remaining.len(), &remaining[remaining.len()..]),
     };
@@ -468,33 +490,58 @@ fn consume_event(remaining: &str) -> ConsumeResult<'_, Event> {
 
     let eventline = &remaining[2..line_end];
 
-    if !eventline.starts_with('<') {
-        // TODO in the future, maybe make timestamps optional?
-        // TODO if they aren't optional, why do we need the leading asterisk?
+    let (begin, remaining) = match consume_timestamp(eventline) {
+        ConsumeResult::Found { found, remaining } => (found, remaining),
+        ConsumeResult::Problem(p) => return ConsumeResult::Problem(p),
+        ConsumeResult::NotFound => return ConsumeResult::Problem(ParseError::MissingTimestamp),
+    };
+
+    if !remaining.starts_with("--") {
+        return ConsumeResult::Found {
+            found: Event::Moment {
+                text: NoNewlines(String::from(remaining.trim_start())),
+                when: begin,
+            },
+            remaining: after_line,
+        };
+    }
+
+    let (end, remaining) = match consume_timestamp(&remaining[2..]) {
+        ConsumeResult::Found { found, remaining } => (found, remaining),
+        ConsumeResult::Problem(p) => return ConsumeResult::Problem(p),
+        ConsumeResult::NotFound => return ConsumeResult::Problem(ParseError::MissingTimestamp),
+    };
+
+    ConsumeResult::Found {
+        found: Event::Interval {
+            begin,
+            end,
+            text: NoNewlines(String::from(remaining.trim_start())),
+        },
+        remaining: after_line,
+    }
+}
+
+fn consume_timestamp(remaining: &str) -> ConsumeResult<'_, OffsetDateTime> {
+    if !remaining.starts_with('<') {
         return ConsumeResult::Problem(ParseError::MissingTimestamp);
     }
 
-    let (when_text, body_text) = match eventline.find('>') {
-        Some(ix) => (&eventline[1..ix], &eventline[ix + 1..]),
+    let (when_text, remaining) = match remaining.find('>') {
+        Some(ix) => (&remaining[1..ix], &remaining[ix + 1..]),
         None => {
             return ConsumeResult::Problem(ParseError::MalformedTimestamp);
         }
     };
 
-    let dt = match PrimitiveDateTime::parse(when_text.trim(), &TIMESTAMP_FORMAT) {
+    let found = match PrimitiveDateTime::parse(when_text.trim(), &TIMESTAMP_FORMAT) {
         Ok(d) => d.assume_offset(UtcOffset::UTC),
         Err(_) => {
             return ConsumeResult::Problem(ParseError::MalformedTimestamp);
         }
     };
 
-    ConsumeResult::Found {
-        found: Event {
-            text: NoNewlines(String::from(body_text.trim_start())),
-            when: dt,
-        },
-        remaining: rest,
-    }
+    ConsumeResult::Found { found, remaining }
 }
 
 // A note begins with a non-blank line and is terminated either by a blank line or end-of-string.
@@ -598,11 +645,11 @@ CANCELLED teach the dog rust
             observations: vec![],
             tasks: vec![],
             events: vec![
-                Event {
+                Event::Moment {
                     when: datetime!(2021-10-31 21:00 UTC),
                     text: NoNewlines(String::from("working in the lab late one night")),
                 },
-                Event {
+                Event::Moment {
                     when: datetime!(2021-10-31 22:10 UTC),
                     text: NoNewlines(String::from("my eyes beheld an eerie sight")),
                 },
@@ -697,11 +744,11 @@ it is multiline
         let e = parse(MESSAGE).unwrap();
         assert_eq!(
             vec![
-                Event {
+                Event::Moment {
                     when: datetime!(2021-10-31 21:10:00 UTC),
                     text: NoNewlines(String::from("working in the lab late one night")),
                 },
-                Event {
+                Event::Moment {
                     when: datetime!(2021-10-31 22:10:00 UTC),
                     text: NoNewlines(String::from("my eyes beheld an eerie sight")),
                 },
